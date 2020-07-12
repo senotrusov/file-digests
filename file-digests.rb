@@ -49,7 +49,6 @@ class DigestDatabase
 
     @insert = @db.prepare("INSERT INTO digests (filename, mtime, digest, digest_check_time) VALUES (?, ?, ?, datetime('now'))")
     @find_by_filename = @db.prepare("SELECT id, mtime, digest FROM digests WHERE filename = ?")
-    @find_by_digest = @db.prepare("SELECT id, filename, mtime FROM digests WHERE digest = ?")
     @touch_digest_check_time = @db.prepare("UPDATE digests SET digest_check_time = datetime('now') WHERE id = ?")
     @update_mtime_and_digest = @db.prepare("UPDATE digests SET mtime = ?, digest = ?, digest_check_time = datetime('now') WHERE id = ?")
     @delete_by_filename = @db.prepare("DELETE FROM digests WHERE filename = ?")
