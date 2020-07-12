@@ -1,3 +1,9 @@
+## Usage
+
+```sh
+VERBOSE=true TEST_ONLY=false ruby file-digests.rb path/to/files path/to/database.sqlite
+```
+
 ## Windows install
 
 1. Install rubyinstaller
