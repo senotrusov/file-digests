@@ -162,6 +162,7 @@ class Checker
     Dir.glob(@files_path + '**' + '*', File::FNM_DOTMATCH) do |filename|
       next unless File.file? filename
       next if @skip_file_digests_sqlite && filename == '.file-digests.sqlite'
+      next if @skip_file_digests_sqlite && filename == '.file-digests.sqlite-wal'
       yield filename
     end
   end
