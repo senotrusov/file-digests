@@ -163,6 +163,7 @@ class Checker
       next unless File.file? filename
       next if @skip_file_digests_sqlite && filename == '.file-digests.sqlite'
       next if @skip_file_digests_sqlite && filename == '.file-digests.sqlite-wal'
+      next if @skip_file_digests_sqlite && filename == '.file-digests.sqlite-shm'
       yield filename
     end
   end
