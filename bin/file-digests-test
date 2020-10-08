@@ -21,7 +21,7 @@ def measure_time
   start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   yield
   elapsed = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start).to_i
-  puts "Elapsed time: #{elapsed / 3600}h #{(elapsed % 3600) / 60}m #{elapsed % 60}s" if VERBOSE
+  puts "Elapsed time: #{elapsed / 3600}h #{(elapsed % 3600) / 60}m #{elapsed % 60}s" unless QUIET
 end
 
 def patch_path_string path
@@ -66,7 +66,7 @@ class DigestDatabase
 
       if found['digest'] == digest
         COUNTS[:good] += 1
-        puts "GOOD: #{file_path}" if VERBOSE
+        # puts "GOOD: #{file_path}" unless QUIET
         unless TEST_ONLY
           if found['mtime'] == mtime
             @touch_digest_check_time.execute found['id']
@@ -77,10 +77,10 @@ class DigestDatabase
       else
         if found['mtime'] == mtime # Digest is different and mtime is the same
           COUNTS[:likely_damaged] += 1
-          puts "LIKELY DAMAGED: #{file_path}"
+          STDERR.puts "LIKELY DAMAGED: #{file_path}"
         else
           COUNTS[:updated] += 1
-          puts "UPDATED: #{file_path}" if VERBOSE || TEST_ONLY
+          puts "UPDATED: #{file_path}" unless QUIET
           unless TEST_ONLY
             @update_mtime_and_digest.execute mtime, digest, found['id']
           end
@@ -88,7 +88,7 @@ class DigestDatabase
       end
     else
       COUNTS[:new] += 1
-      puts "NEW: #{file_path}" if VERBOSE || TEST_ONLY
+      puts "NEW: #{file_path}" unless QUIET
       unless TEST_ONLY
         @new_files[file_path] = digest
         @insert.execute! file_path, mtime, digest
@@ -182,7 +182,7 @@ class Checker
 
 end
 
-VERBOSE = (ENV["VERBOSE"] == "true")
+QUIET = (ENV["QUIET"] == "true")
 TEST_ONLY = true
 
 COUNTS = {good: 0, updated: 0, new: 0, missing: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
@@ -202,7 +202,7 @@ begin
   end
 
   if COUNTS[:likely_damaged] > 0 || COUNTS[:exceptions] > 0
-    puts "ERRORS WERE OCCURRED, PLEASE CHECK FOR THEM"
+    STDERR.puts "ERRORS WERE OCCURRED"
   end
 
   puts COUNTS.inspect
