@@ -154,7 +154,7 @@ class Checker
   end
 
   def walk_files
-    Dir.glob(@files_path + '**' + '*') do |filename|
+    Dir.glob(@files_path + '**' + '*', File::FNM_DOTMATCH) do |filename|
       next unless File.file? filename
       next if @skip_file_digests_sqlite && filename == 'file-digests.sqlite'
       yield filename
