@@ -1,2 +1,3 @@
 .byebug_history
-test.sqlite
+file-digests.sqlite
+test-dir

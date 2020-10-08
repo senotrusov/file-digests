@@ -8,8 +8,7 @@ require 'sqlite3'
 def ensure_dir_exists path
   if File.exist?(path)
     unless File.directory?(path)
-      STDERR.puts (error_string = "#{path} is not a directory")
-      raise error_string
+      raise "#{path} is not a directory"
     end
   else
     FileUtils.mkdir_p path
@@ -51,44 +50,48 @@ class DigestDatabase
     @find_by_filename = @db.prepare("SELECT id, mtime, digest FROM digests WHERE filename = ?")
     @touch_digest_check_time = @db.prepare("UPDATE digests SET digest_check_time = datetime('now') WHERE id = ?")
     @update_mtime_and_digest = @db.prepare("UPDATE digests SET mtime = ?, digest = ?, digest_check_time = datetime('now') WHERE id = ?")
+    @update_mtime = @db.prepare("UPDATE digests SET mtime = ?, digest_check_time = datetime('now') WHERE id = ?")
     @delete_by_filename = @db.prepare("DELETE FROM digests WHERE filename = ?")
   end
 
   def insert_or_update file_path, mtime, digest
     result = @find_by_filename.execute file_path
+
     if found = result.next_hash
       raise "Multiple records found" if result.next
 
       @missing_files.delete(file_path)
 
-      if found['mtime'] == mtime || IGNORE_DATE
-        if found['digest'] == digest
-          COUNTS[:good] += 1
-          unless TEST_ONLY
-            puts "GOOD: #{file_path}" if VERBOSE
+      if found['digest'] == digest
+        COUNTS[:good] += 1
+        puts "GOOD: #{file_path}" if VERBOSE
+        unless TEST_ONLY
+          if found['mtime'] == mtime
             @touch_digest_check_time.execute found['id']
+          else
+            @update_mtime.execute mtime, found['id']
           end
-        else
-          COUNTS[:digest_is_different] += 1
-          raise "Digest is different"
         end
       else
-        COUNTS[:updated] += 1
-        puts "UPDATED: #{file_path}" if VERBOSE
-        unless TEST_ONLY
-          @update_mtime_and_digest.execute mtime, digest, found['id']
+        if found['mtime'] == mtime # Digest is different and mtime is the same
+          COUNTS[:likely_damaged] += 1
+          puts "LIKELY DAMAGED: #{file_path}"
+        else
+          COUNTS[:updated] += 1
+          puts "UPDATED: #{file_path}" if VERBOSE || TEST_ONLY
+          unless TEST_ONLY
+            @update_mtime_and_digest.execute mtime, digest, found['id']
+          end
         end
       end
-
     else
       COUNTS[:new] += 1
-      puts "NEW: #{file_path}" if VERBOSE
+      puts "NEW: #{file_path}" if VERBOSE || TEST_ONLY
       unless TEST_ONLY
         @new_files[file_path] = digest
         @insert.execute! file_path, mtime, digest
       end
     end
-
   end
 
   def process_missing_files
@@ -122,10 +125,15 @@ end
 class Checker
   def initialize files_path, digest_database_path
     @files_path = files_path
-    @digest_database_path = digest_database_path
-
     ensure_dir_exists @files_path
-    ensure_dir_exists @digest_database_path.dirname
+
+    if digest_database_path
+      @digest_database_path = digest_database_path
+      ensure_dir_exists @digest_database_path.dirname
+    else
+      @digest_database_path = @files_path + 'file-digests.sqlite'
+      @skip_file_digests_sqlite = true
+    end
 
     @digest_database = DigestDatabase.new @digest_database_path
   end
@@ -135,7 +143,8 @@ class Checker
       begin
         process_file filename
       rescue => exception
-        STDERR.puts "#{filename}: #{exception.message}"
+        COUNTS[:exceptions] += 1
+        STDERR.puts "EXCEPTION: #{filename}: #{exception.message}"
       end
     end
 
@@ -145,6 +154,7 @@ class Checker
   def walk_files
     Dir.glob(@files_path + '**' + '*') do |filename|
       next unless File.file? filename
+      next if @skip_file_digests_sqlite && filename == 'file-digests.sqlite'
       yield filename
     end
   end
@@ -172,15 +182,27 @@ end
 
 VERBOSE = (ENV["VERBOSE"] == "true")
 TEST_ONLY = (ENV["TEST_ONLY"] == "true")
-IGNORE_DATE = (ENV["IGNORE_DATE"] == "true")
-COUNTS = {good: 0, updated: 0, new: 0, missing: 0, renamed: 0, digest_is_different: 0}
 
-files_path = Pathname.new patch_path_string(ARGV[0])
-digest_database_path = Pathname.new patch_path_string(ARGV[1])
+COUNTS = {good: 0, updated: 0, new: 0, missing: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
 
-measure_time do
-  checker = Checker.new files_path, digest_database_path
-  checker.check
+begin
+  files_path = Pathname.new patch_path_string(ARGV[0])
+  digest_database_path = Pathname.new patch_path_string(ARGV[1]) if ARGV[1]
+
+  measure_time do
+    checker = Checker.new files_path, digest_database_path
+    checker.check
+  end
+
+  if COUNTS[:likely_damaged] > 0 || COUNTS[:exceptions] > 0
+    puts "ERRORS WERE OCCURRED, PLEASE CHECK FOR THEM"
+  end
+
+  puts COUNTS.inspect
+
+rescue => exception
+  STDERR.puts "EXCEPTION: #{exception.message}"
+  raise exception
 end
 
-puts COUNTS.inspect
+
