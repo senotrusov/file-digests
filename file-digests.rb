@@ -61,7 +61,7 @@ class DigestDatabase
 
       @missing_files.delete(file_path)
 
-      if found['mtime'] == mtime
+      if found['mtime'] == mtime || IGNORE_DATE
         if found['digest'] == digest
           COUNTS[:good] += 1
           unless TEST_ONLY
@@ -172,6 +172,7 @@ end
 
 VERBOSE = (ENV["VERBOSE"] == "true")
 TEST_ONLY = (ENV["TEST_ONLY"] == "true")
+IGNORE_DATE = (ENV["IGNORE_DATE"] == "true")
 COUNTS = {good: 0, updated: 0, new: 0, missing: 0, renamed: 0, digest_is_different: 0}
 
 files_path = Pathname.new patch_path_string(ARGV[0])
