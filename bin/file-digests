@@ -133,7 +133,7 @@ class Checker
       @digest_database_path = digest_database_path
       ensure_dir_exists @digest_database_path.dirname
     else
-      @digest_database_path = @files_path + 'file-digests.sqlite'
+      @digest_database_path = @files_path + '.file-digests.sqlite'
       @skip_file_digests_sqlite = true
     end
 
@@ -156,7 +156,7 @@ class Checker
   def walk_files
     Dir.glob(@files_path + '**' + '*', File::FNM_DOTMATCH) do |filename|
       next unless File.file? filename
-      next if @skip_file_digests_sqlite && filename == 'file-digests.sqlite'
+      next if @skip_file_digests_sqlite && filename == '.file-digests.sqlite'
       yield filename
     end
   end
