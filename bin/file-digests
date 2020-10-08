@@ -1,3 +1,5 @@
+#!/usr/bin/env ruby
+
 require 'date'
 require 'set'
 require 'digest'
@@ -186,7 +188,12 @@ TEST_ONLY = (ENV["TEST_ONLY"] == "true")
 COUNTS = {good: 0, updated: 0, new: 0, missing: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
 
 begin
-  files_path = Pathname.new patch_path_string(ARGV[0])
+  if ARGV[0]
+    files_path = Pathname.new patch_path_string(ARGV[0])
+  else
+    files_path = Pathname.new patch_path_string(".")
+  end
+
   digest_database_path = Pathname.new patch_path_string(ARGV[1]) if ARGV[1]
 
   measure_time do
@@ -204,5 +211,3 @@ rescue => exception
   STDERR.puts "EXCEPTION: #{exception.message}"
   raise exception
 end
-
-
