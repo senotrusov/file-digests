@@ -43,6 +43,11 @@ class DigestDatabase
       @db.execute "CREATE UNIQUE INDEX digests_filename ON digests(filename)"
     end
 
+    @db.execute 'PRAGMA journal_mode = "WAL"'
+    @db.execute 'PRAGMA synchronous = "NORMAL"'
+    @db.execute 'PRAGMA locking_mode = "EXCLUSIVE"'
+    @db.execute 'PRAGMA cache_size = "5000"'
+
     @db.results_as_hash = true
     @missing_files = Hash[@db.prepare("SELECT filename, digest FROM digests").execute!]
     @new_files = {}
