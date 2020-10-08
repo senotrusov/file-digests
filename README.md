@@ -10,4 +10,5 @@ QUIET=false TEST_ONLY=false file-digests path/to/files path/to/database.sqlite
 ```sh
 gem build file-digests.gemspec
 gem push file-digests-
+gem install file-digests-
 ```
