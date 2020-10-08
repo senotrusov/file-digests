@@ -7,7 +7,7 @@ Gem::Specification.new do |s|
   s.authors     = ["Stanislav Senotrusov"]
   s.email       = 'stan@senotrusov.com'
   s.executables << 'file-digests'
-  s.executables << 'test-file-digests'
+  s.executables << 'file-digests-test'
   s.homepage    = 'https://github.com/senotrusov/file-digests'
   s.license     = 'Apache-2.0'
   s.add_runtime_dependency 'sqlite3', '>= 1.3.0'
