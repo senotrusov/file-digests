@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 
-require 'file-digests'
-
 QUIET = (ENV["QUIET"] == "true")
 TEST_ONLY = true
+
+require 'file-digests'
 
 FileDigests.perform_check
