@@ -1,13 +1,13 @@
 Gem::Specification.new do |s|
   s.name        = 'file-digests'
-  s.version     = '0.0.8'
+  s.version     = '0.0.9'
   s.date        = '2020-10-08'
-  s.summary     = "file-digests"
-  s.description = "Calculate file digests and check for the possible file corruption"
-  s.authors     = ["Stanislav Senotrusov"]
+  s.summary     = 'file-digests'
+  s.description = 'Calculate file digests and check for the possible file corruption'
+  s.authors     = ['Stanislav Senotrusov']
   s.email       = 'stan@senotrusov.com'
-  s.executables << 'file-digests'
-  s.executables << 'file-digests-test'
+  s.files       = ['lib/file-digests.rb']
+  s.executables = ['file-digests', 'file-digests-test']
   s.homepage    = 'https://github.com/senotrusov/file-digests'
   s.license     = 'Apache-2.0'
   s.add_runtime_dependency 'sqlite3', '>= 1.3.0'

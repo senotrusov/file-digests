@@ -1,3 +1,4 @@
-SET VERBOSE=true
+SET QUIET=false
 SET TEST_ONLY=false
-ruby bin\file-digests
+
+ruby -Ilib bin\file-digests
