@@ -166,6 +166,10 @@ module FileDigests
       FileDigests::ensure_dir_exists @files_path
       FileDigests::ensure_dir_exists digest_database_path.dirname
 
+      if File.exist?(digest_database_path.dirname + '.file-digests.sha512')
+        @use_sha512 = true
+      end
+
       @digest_database = DigestDatabase.new digest_database_path
     end
 
@@ -224,7 +228,7 @@ module FileDigests
 
     def get_file_digest filename
       File.open(filename, 'rb') do |io|
-        digest = Digest::SHA512.new
+        digest = (@use_sha512 ? Digest::SHA512 : Digest::SHA256).new
         buffer = ""
         while io.read(40960, buffer)
           digest.update(buffer)
