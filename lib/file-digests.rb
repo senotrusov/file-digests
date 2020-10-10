@@ -30,10 +30,8 @@ module FileDigests
   end
 
   def self.perform_check
-    files_path = Pathname.new patch_path_string(ARGV[0] || ".")
-    digest_database_path = Pathname.new patch_path_string(ARGV[1]) if ARGV[1]
-    checker = Checker.new files_path, digest_database_path
-    checker.check
+    checker = Checker.new ARGV[0], ARGV[1]
+    checker.perform_check
   end
 
   class DigestDatabase
@@ -154,26 +152,32 @@ module FileDigests
 
   class Checker
     def initialize files_path, digest_database_path
-      @counters = {good: 0, updated: 0, new: 0, missing: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
-      @files_path = files_path
+      @files_path = Pathname.new(FileDigests::patch_path_string(files_path || ".")).cleanpath
       @prefix_to_remove = @files_path.to_s + '/'
 
-      unless digest_database_path
-        digest_database_path = @files_path + '.file-digests.sqlite'
+      raise "Files path must be a readable directory" unless (File.directory?(@files_path) && File.readable?(@files_path))
+
+      @digest_database_path = if digest_database_path
+        Pathname.new(FileDigests::patch_path_string(digest_database_path)).cleanpath
+      else
+        @files_path + '.file-digests.sqlite'
+      end
+
+      if @files_path == @digest_database_path.dirname
         @skip_file_digests_sqlite = true
       end
 
-      FileDigests::ensure_dir_exists @files_path
-      FileDigests::ensure_dir_exists digest_database_path.dirname
+      FileDigests::ensure_dir_exists @digest_database_path.dirname
 
-      if File.exist?(digest_database_path.dirname + '.file-digests.sha512')
+      if File.exist?(@digest_database_path.dirname + '.file-digests.sha512')
         @use_sha512 = true
       end
 
-      @digest_database = DigestDatabase.new digest_database_path
+      @digest_database = DigestDatabase.new @digest_database_path
+      @counters = {good: 0, updated: 0, new: 0, missing: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
     end
 
-    def check
+    def perform_check
       FileDigests::measure_time do
         walk_files do |filename|
           process_file filename
@@ -210,9 +214,11 @@ module FileDigests
       return if stat.socket?
 
       if @skip_file_digests_sqlite
-        return if filename == '.file-digests.sqlite'
-        return if filename == '.file-digests.sqlite-wal'
-        return if filename == '.file-digests.sqlite-shm'
+        basename = File.basename(filename)
+        return if basename == '.file-digests.sha512'
+        return if basename == '.file-digests.sqlite'
+        return if basename == '.file-digests.sqlite-wal'
+        return if basename == '.file-digests.sqlite-shm'
       end
 
       @digest_database.insert_or_update(
