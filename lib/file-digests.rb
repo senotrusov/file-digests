@@ -163,6 +163,10 @@ module FileDigests
         @files_path + '.file-digests.sqlite'
       end
 
+      if File.directory?(@digest_database_path)
+        @digest_database_path = @digest_database_path + '.file-digests.sqlite'
+      end
+
       if @files_path == @digest_database_path.dirname
         @skip_file_digests_sqlite = true
       end
