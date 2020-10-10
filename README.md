@@ -19,7 +19,7 @@ sudo gem install file-digests
 ## Usage
 
 ```sh
-# For current directory:
+# For the current directory:
 #   1. Creates database if needed (.file-digests.*)
 #   2. Adds new files
 #   3. Checks previously added files and reports any found issues
