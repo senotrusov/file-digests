@@ -196,14 +196,6 @@ module FileDigests
 
     private
 
-
-    def confirm text
-      if STDIN.tty? && STDOUT.tty?
-        puts "#{text} (y/n)?"
-        STDIN.gets.strip.downcase == "y"
-      end
-    end
-
     def process_file filename
       return if File.symlink? filename
 
@@ -269,6 +261,13 @@ module FileDigests
           digest.update(buffer)
         end
         return digest.hexdigest
+      end
+    end
+
+    def confirm text
+      if STDIN.tty? && STDOUT.tty?
+        puts "#{text} (y/n)?"
+        STDIN.gets.strip.downcase == "y"
       end
     end
 
