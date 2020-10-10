@@ -1,3 +1,4 @@
+SET AUTO=false
 SET QUIET=false
 SET TEST_ONLY=false
 

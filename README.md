@@ -20,22 +20,26 @@ sudo gem install file-digests
 
 ```sh
 # For the current directory:
-#   1. Creates database if needed (.file-digests.*)
-#   2. Adds new files
-#   3. Checks previously added files and reports any found issues
-#   4. Tracks renames
-#   5. Finds deleted files and asks to removed them from the database
+#   1. Create database if needed (.file-digests.*)
+#   2. Add new files
+#   3. Check previously added files and report any found issues
+#   4. Track renames
+#   5. Find deleted files and ask to remove them from the database
 file-digests
 
-# Performs all the above but do not changes the database, just reports.
+# Perform all the above but do not change the database, just report
 file-digests-test
 
-# Optional flags and arguments
-#   QUIET - less verbose, but stil lreport any found issues
-#   TEST_ONLY - the same as calling "file-digests-test"
-QUIET=false TEST_ONLY=false file-digests [path/to/directory] [path/to/database_file]
+# Do not ask for confirmations (remove absent files from the database)
+file-digests-auto
 
-# If you want to check current directory but to place database elsewere,
+# Optional flags and arguments:
+#   AUTO - Do not ask for confirmations, same as executing "file-digests-auto"
+#   QUIET - less verbose, but stil report any found issues
+#   TEST_ONLY - do not change the database, same as executing "file-digests-test"
+AUTO=false QUIET=false TEST_ONLY=false file-digests [path/to/directory] [path/to/database_file]
+
+# If you want to check current directory and place database elsewere,
 # you could use "." as a path/to/directory following the path/to/database_file
 file-digests . ~/digests/my-digest.sqlite
 ```

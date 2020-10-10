@@ -1,7 +1,6 @@
 #!/usr/bin/env ruby
 
-QUIET = (ENV["QUIET"] == "true")
-TEST_ONLY = true
+ENV["TEST_ONLY"] = "true"
 
 require 'file-digests'
 

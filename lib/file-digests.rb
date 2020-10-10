@@ -8,12 +8,19 @@ require 'sqlite3'
 module FileDigests
 
   def self.perform_check
-    checker = Checker.new ARGV[0], ARGV[1]
+    options = {
+      auto: (ENV["AUTO"] == "true"),
+      quiet: (ENV["QUIET"] == "true"),
+      test_only: (ENV["TEST_ONLY"] == "true")
+    }
+    checker = Checker.new ARGV[0], ARGV[1], options
     checker.perform_check
   end
 
   class DigestDatabase
-    def initialize path
+    def initialize path, options = {}
+      @options = options
+
       @db = SQLite3::Database.new path.to_s
       @db.results_as_hash = true
 
@@ -54,8 +61,8 @@ module FileDigests
 
         if found['digest'] == digest
           counters[:good] += 1
-          # puts "GOOD: #{file_path}" unless QUIET
-          unless TEST_ONLY
+          # puts "GOOD: #{file_path}" unless @options[:quiet]
+          unless @options[:test_only]
             if found['mtime'] == mtime
               touch_digest_check_time found['id']
             else
@@ -68,47 +75,50 @@ module FileDigests
             STDERR.puts "LIKELY DAMAGED: #{file_path}"
           else
             counters[:updated] += 1
-            puts "UPDATED: #{file_path}" unless QUIET
-            unless TEST_ONLY
+            puts "UPDATED: #{file_path}" unless @options[:quiet]
+            unless @options[:test_only]
               update_mtime_and_digest mtime, digest, found['id']
             end
           end
         end
       else
         counters[:new] += 1
-        puts "NEW: #{file_path}" unless QUIET
-        unless TEST_ONLY
+        puts "NEW: #{file_path}" unless @options[:quiet]
+        unless @options[:test_only]
           @new_files[file_path] = digest
           insert file_path, mtime, digest
         end
       end
     end
 
-    def process_missing_files counters
+    def track_renames counters
       @missing_files.delete_if do |filename, digest|
         if @new_files.value?(digest)
           counters[:renamed] += 1
-          unless TEST_ONLY
+          unless @options[:test_only]
             delete_by_filename filename
           end
           true
         end
       end
+      counters[:missing] = @missing_files.length
+    end
 
-      if (counters[:missing] = @missing_files.length) > 0
-        puts "\nMISSING FILES:"
-        @missing_files.sort.to_h.each do |filename, digest|
-          puts filename
-        end
-        unless TEST_ONLY
-          puts "Remove missing files from the database (y/n)?"
-          if STDIN.gets.strip.downcase == "y"
-            @db.transaction do
-              @missing_files.each do |filename, digest|
-                delete_by_filename filename
-              end
-            end
-          end
+    def any_missing_files?
+      @missing_files.length > 0
+    end
+
+    def print_missing_files
+      puts "\nMISSING FILES:"
+      @missing_files.sort.to_h.each do |filename, digest|
+        puts filename
+      end
+    end
+
+    def remove_missing_files
+      @db.transaction do
+        @missing_files.each do |filename, digest|
+          delete_by_filename filename
         end
       end
     end
@@ -129,7 +139,8 @@ module FileDigests
   end
 
   class Checker
-    def initialize files_path, digest_database_path
+    def initialize files_path, digest_database_path, options = {}
+      @options = options
       @files_path = cleanup_path(files_path || ".")
       @prefix_to_remove = @files_path.to_s + '/'
 
@@ -156,7 +167,7 @@ module FileDigests
         @use_sha512 = true
       end
 
-      @digest_database = DigestDatabase.new @digest_database_path
+      @digest_database = DigestDatabase.new @digest_database_path, @options
       @counters = {good: 0, updated: 0, new: 0, missing: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
     end
 
@@ -167,7 +178,14 @@ module FileDigests
         end
       end
 
-      @digest_database.process_missing_files @counters
+      @digest_database.track_renames @counters
+
+      if @digest_database.any_missing_files?
+        @digest_database.print_missing_files
+        if !@options[:test_only] && (@options[:auto] || confirm("Remove missing files from the database"))
+          @digest_database.remove_missing_files
+        end
+      end
 
       if @counters[:likely_damaged] > 0 || @counters[:exceptions] > 0
         STDERR.puts "ERRORS WERE OCCURRED"
@@ -177,6 +195,14 @@ module FileDigests
     end
 
     private
+
+
+    def confirm text
+      if STDIN.tty? && STDOUT.tty?
+        puts "#{text} (y/n)?"
+        STDIN.gets.strip.downcase == "y"
+      end
+    end
 
     def process_file filename
       return if File.symlink? filename
@@ -250,7 +276,7 @@ module FileDigests
       start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       yield
       elapsed = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start).to_i
-      puts "Elapsed time: #{elapsed / 3600}h #{(elapsed % 3600) / 60}m #{elapsed % 60}s" unless QUIET
+      puts "Elapsed time: #{elapsed / 3600}h #{(elapsed % 3600) / 60}m #{elapsed % 60}s" unless @options[:quiet]
     end
 
   end
