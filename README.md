@@ -6,6 +6,8 @@ If you move your files across platforms, through unreliable connections or you d
 
 It will also help you to find issues with your storage: bitrot, bad blocks, hardware or software issues.
 
+It will also help you to find duplicate files, as soon as you build the database.
+
 It is written on Ruby and it's cross-platform (Windows/macOS/Linux/UNIX). I tested it on Windows 10, macOS Catalina and Ubuntu 20.04.
 
 ## Install
@@ -32,6 +34,10 @@ file-digests-test
 
 # Do not ask for confirmations (remove absent files from the database)
 file-digests-auto
+
+# Show the list of duplicate files, based on the information out of the database
+# Please build the database first by running "file-digests"
+file-digests-show-duplicates
 
 # Optional flags and arguments:
 #   AUTO - Do not ask for confirmations, same as executing "file-digests-auto"

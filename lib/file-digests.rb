@@ -17,8 +17,14 @@ class FileDigests
     file_digests.perform_check
   end
 
+  def self.show_duplicates
+    file_digests = self.new ARGV[0], ARGV[1]
+    file_digests.show_duplicates
+  end
+
   def initialize files_path, digest_database_path, options = {}
     @options = options
+
     @files_path = cleanup_path(files_path || ".")
     @prefix_to_remove = @files_path.to_s + '/'
 
@@ -46,8 +52,6 @@ class FileDigests
     end
 
     initialize_database @digest_database_path
-
-    @counters = {good: 0, updated: 0, new: 0, missing: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
   end
 
   def initialize_database path
@@ -70,18 +74,20 @@ class FileDigests
       execute "CREATE UNIQUE INDEX digests_filename ON digests(filename)"
     end
 
-    @missing_files = Hash[@db.prepare("SELECT filename, digest FROM digests").execute!]
-    @new_files = {}
-
     prepare_method :insert, "INSERT INTO digests (filename, mtime, digest, digest_check_time) VALUES (?, ?, ?, datetime('now'))"
     prepare_method :find_by_filename, "SELECT id, mtime, digest FROM digests WHERE filename = ?"
     prepare_method :touch_digest_check_time, "UPDATE digests SET digest_check_time = datetime('now') WHERE id = ?"
     prepare_method :update_mtime_and_digest, "UPDATE digests SET mtime = ?, digest = ?, digest_check_time = datetime('now') WHERE id = ?"
     prepare_method :update_mtime, "UPDATE digests SET mtime = ?, digest_check_time = datetime('now') WHERE id = ?"
     prepare_method :delete_by_filename, "DELETE FROM digests WHERE filename = ?"
+    prepare_method :query_duplicates, "SELECT digest, filename FROM digests WHERE digest IN (SELECT digest FROM digests GROUP BY digest HAVING count(*) > 1) ORDER BY digest, filename;"
   end
 
   def perform_check
+    @counters = {good: 0, updated: 0, new: 0, missing: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
+    @missing_files = Hash[@db.prepare("SELECT filename, digest FROM digests").execute!]
+    @new_files = {}
+
     measure_time do
       walk_files do |filename|
         process_file filename
@@ -102,6 +108,20 @@ class FileDigests
     end
 
     puts @counters.inspect
+  end
+
+  def show_duplicates
+    current_digest = nil
+    result = query_duplicates
+
+    while found = result.next_hash do
+      if current_digest != found['digest']
+        puts "" if current_digest
+        current_digest = found['digest']
+        puts "#{found['digest']}:"
+      end
+      puts "  #{found['filename']}"
+    end
   end
 
   private
@@ -270,5 +290,4 @@ class FileDigests
       instance_variable_get(variable).execute(*args, &block)
     end
   end
-
 end
