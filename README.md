@@ -20,14 +20,14 @@ sudo gem install file-digests
 
 ```sh
 # For current directory:
-#   1. Create database if needed (.file-digests.*)
-#   2. Add new files
-#   3. Check previously added files and report any found issues
-#   4. Track renames
-#   5. Find deleted files and ask to removed them from the database
+#   1. Creates database if needed (.file-digests.*)
+#   2. Adds new files
+#   3. Checks previously added files and reports any found issues
+#   4. Tracks renames
+#   5. Finds deleted files and asks to removed them from the database
 file-digests
 
-# Do all the above but do not change the database, just report.
+# Performs all the above but do not changes the database, just reports.
 file-digests-test
 
 # Optional flags and arguments
