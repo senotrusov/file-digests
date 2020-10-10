@@ -216,7 +216,7 @@ module FileDigests
     end
 
     def cleanup_path path
-      Pathname.new(patch_path_string(digest_database_path)).cleanpath
+      Pathname.new(patch_path_string(path)).cleanpath
     end
 
     def ensure_dir_exists path
