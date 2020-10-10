@@ -233,7 +233,7 @@ module FileDigests
         )
     rescue => exception
       @counters[:exceptions] += 1
-      STDERR.puts "EXCEPTION: #{filename}: #{exception.message}"
+      STDERR.puts "EXCEPTION: #{filename.encode('utf-8', universal_newline: true)}: #{exception.message}"
     end
 
     def get_file_digest filename
