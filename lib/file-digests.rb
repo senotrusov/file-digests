@@ -152,6 +152,7 @@ module FileDigests
 
       ensure_dir_exists @digest_database_path.dirname
 
+      # Please do not use this flag, support for sha512 is here for backward compatibility, and one day it will be removed.
       if File.exist?(@digest_database_path.dirname + '.file-digests.sha512')
         @use_sha512 = true
       end
