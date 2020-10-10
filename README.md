@@ -26,3 +26,7 @@ file-digests-test
 #
 QUIET=false TEST_ONLY=false file-digests [path/to/firectory] [path/to/database.sqlite]
 ```
+
+## Contributing
+
+Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
