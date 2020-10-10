@@ -222,7 +222,7 @@ module FileDigests
       end
 
       @digest_database.insert_or_update(
-        filename.delete_prefix(@prefix_to_remove).unicode_normalize(:nfkc),
+        filename.delete_prefix(@prefix_to_remove).encode('utf-8', universal_newline: true).unicode_normalize(:nfkc),
         stat.mtime.utc.strftime('%Y-%m-%d %H:%M:%S'),
         get_file_digest(filename),
         @counters
