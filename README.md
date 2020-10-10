@@ -35,10 +35,6 @@ file-digests-test
 # Do not ask for confirmations (remove absent files from the database)
 file-digests-auto
 
-# Show the list of duplicate files, based on the information out of the database
-# Please build the database first by running "file-digests"
-file-digests-show-duplicates
-
 # Optional flags and arguments:
 #   AUTO - Do not ask for confirmations, same as executing "file-digests-auto"
 #   QUIET - less verbose, but stil report any found issues
@@ -48,6 +44,11 @@ AUTO=false QUIET=false TEST_ONLY=false file-digests [path/to/directory] [path/to
 # If you want to check current directory and place database elsewere,
 # you could use "." as a path/to/directory following the path/to/database_file
 file-digests . ~/digests/my-digest.sqlite
+
+# Show the list of duplicate files, based on the information out of the database
+# Please build the database first by running "file-digests"
+file-digests-show-duplicates
+file-digests-show-duplicates [path/to/directory] [path/to/database_file]
 ```
 
 ## Contributing
