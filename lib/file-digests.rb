@@ -8,27 +8,6 @@ require 'sqlite3'
 
 module FileDigests
 
-  def self.ensure_dir_exists path
-    if File.exist?(path)
-      unless File.directory?(path)
-        raise "#{path} is not a directory"
-      end
-    else
-      FileUtils.mkdir_p path
-    end
-  end
-
-  def self.measure_time
-    start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    yield
-    elapsed = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start).to_i
-    puts "Elapsed time: #{elapsed / 3600}h #{(elapsed % 3600) / 60}m #{elapsed % 60}s" unless QUIET
-  end
-
-  def self.patch_path_string path
-    Gem.win_platform? ? path.gsub(/\\/, '/') : path
-  end
-
   def self.perform_check
     checker = Checker.new ARGV[0], ARGV[1]
     checker.perform_check
@@ -152,13 +131,13 @@ module FileDigests
 
   class Checker
     def initialize files_path, digest_database_path
-      @files_path = Pathname.new(FileDigests::patch_path_string(files_path || ".")).cleanpath
+      @files_path = cleanup_path(files_path || ".")
       @prefix_to_remove = @files_path.to_s + '/'
 
       raise "Files path must be a readable directory" unless (File.directory?(@files_path) && File.readable?(@files_path))
 
       @digest_database_path = if digest_database_path
-        Pathname.new(FileDigests::patch_path_string(digest_database_path)).cleanpath
+        cleanup_path(digest_database_path)
       else
         @files_path + '.file-digests.sqlite'
       end
@@ -171,7 +150,7 @@ module FileDigests
         @skip_file_digests_sqlite = true
       end
 
-      FileDigests::ensure_dir_exists @digest_database_path.dirname
+      ensure_dir_exists @digest_database_path.dirname
 
       if File.exist?(@digest_database_path.dirname + '.file-digests.sha512')
         @use_sha512 = true
@@ -182,7 +161,7 @@ module FileDigests
     end
 
     def perform_check
-      FileDigests::measure_time do
+      measure_time do
         walk_files do |filename|
           process_file filename
         end
@@ -197,11 +176,7 @@ module FileDigests
       puts @counters.inspect
     end
 
-    def walk_files
-      Dir.glob(@files_path + '**' + '*', File::FNM_DOTMATCH) do |filename|
-        yield filename
-      end
-    end
+    private
 
     def process_file filename
       return if File.symlink? filename
@@ -236,6 +211,30 @@ module FileDigests
       STDERR.puts "EXCEPTION: #{filename.encode('utf-8', universal_newline: true)}: #{exception.message}"
     end
 
+    def patch_path_string path
+      Gem.win_platform? ? path.gsub(/\\/, '/') : path
+    end
+
+    def cleanup_path path
+      Pathname.new(patch_path_string(digest_database_path)).cleanpath
+    end
+
+    def ensure_dir_exists path
+      if File.exist?(path)
+        unless File.directory?(path)
+          raise "#{path} is not a directory"
+        end
+      else
+        FileUtils.mkdir_p path
+      end
+    end
+
+    def walk_files
+      Dir.glob(@files_path + '**' + '*', File::FNM_DOTMATCH) do |filename|
+        yield filename
+      end
+    end
+
     def get_file_digest filename
       File.open(filename, 'rb') do |io|
         digest = (@use_sha512 ? Digest::SHA512 : Digest::SHA256).new
@@ -245,6 +244,13 @@ module FileDigests
         end
         return digest.hexdigest
       end
+    end
+
+    def measure_time
+      start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      yield
+      elapsed = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start).to_i
+      puts "Elapsed time: #{elapsed / 3600}h #{(elapsed % 3600) / 60}m #{elapsed % 60}s" unless QUIET
     end
 
   end
