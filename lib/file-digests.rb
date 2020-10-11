@@ -203,8 +203,8 @@ class FileDigests
   def measure_time
     start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     yield
-    elapsed = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start).to_i
-    puts "Elapsed time: #{elapsed / 3600}h #{(elapsed % 3600) / 60}m #{elapsed % 60}s" unless @options[:quiet]
+    elapsed = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start)
+    puts "Elapsed time: #{elapsed.to_i / 3600}h #{(elapsed.to_i % 3600) / 60}m #{'%.3f' % (elapsed % 60)}s" unless @options[:quiet]
   end
 
   def insert_or_update file_path, mtime, digest
