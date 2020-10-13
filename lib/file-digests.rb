@@ -133,16 +133,19 @@ class FileDigests
     execute 'PRAGMA cache_size = "5000"'
 
     @db.transaction(:exclusive) do
+      metadata_table_was_created = false
       unless table_exist?("metadata")
         execute "CREATE TABLE metadata (
           key TEXT NOT NULL PRIMARY KEY,
           value TEXT)"
         execute "CREATE UNIQUE INDEX metadata_key ON metadata(key)"
-        set_metadata("metadata_table_created_by_gem_version", file_digests_gem_version) if file_digests_gem_version
+        metadata_table_was_created = true
       end
 
       prepare_method :set_metadata_query, "INSERT INTO metadata (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value=excluded.value"
       prepare_method :get_metadata_query, "SELECT value FROM metadata WHERE key = ?"
+
+      set_metadata("metadata_table_created_by_gem_version", file_digests_gem_version) if file_digests_gem_version && metadata_table_was_created
 
       # Heuristic to detect database version 1 (metadata was not stored back then)
       unless get_metadata("database_version")
