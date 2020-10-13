@@ -238,6 +238,7 @@ class FileDigests
             update_digest_to_new_digest new_digest, old_digest
           end
           set_metadata "digest_algorithm", @new_digest_algorithm
+          puts "Transition to a new digest algorithm complete: #{@new_digest_algorithm}"
         end
       end
 
