@@ -2,4 +2,4 @@
 
 require 'file-digests'
 
-FileDigests.perform_check
+FileDigests.run_cli_utility

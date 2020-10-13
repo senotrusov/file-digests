@@ -1,54 +1,59 @@
 ## File-digests
 
-A tool to check if there are any changes in your files using SHA256 sum.
+An utility to check if there are any changes in your files.
 
-If you move your files across platforms, through unreliable connections or you don't quite trust your tools, that utility will help you to spot possible errors.
+If you move your files around, perhaps across platforms, maybe through unreliable connections, or with the tools you don't quite trust, that utility will help you to verify the result and spot possible errors.
 
-It will also help you to find issues with your storage: bitrot, bad blocks, hardware or software issues.
+It will also help you to find issues with your storage: silent data corruption, bitflips/bitrot, bad blocks, other hardware or software faults.
 
-It will also help you to find duplicate files, as soon as you build the database.
+It can show a list of duplicate files as well.
 
-It is written on Ruby and it's cross-platform (Windows/macOS/Linux/UNIX). I tested it on Windows 10, macOS Catalina and Ubuntu 20.04.
+It is a CLI utility, written on Ruby. It's cross-platform (Linux/UNIX/Windows/macOS). It's tested to run on Ubuntu 20.04, Windows 10, and macOS Catalina.
+
+### How it works
+
+* Given the directory, it calculates digests (BLAKE2b512, SHA3-256, or SHA512-256) for the files it contains.
+* Those digests are then kept in a SQLite database. By default, the database is stored in the same directory with the rest of the files. You could specify any other location.
+* Any time later you run the tool again.
+  * It will check if any file becomes corrupted or missed due to hardware/software issues.
+  * It will store digests of updated files. It is assumed that if a particular file have both mtime and digest changed then it's a sign of a legitimate update, and not of a storage fault.
+  * New files will be added to a database.
+  * Renames will be tracked.
+  * If files are missed from your storage then the tool will ask for your confirmation to remove information on those files from the database.
+
+### Digest algorithms
+
+* You could change the digest algorithm at any time. Transition to a new algorithm will only occur if all files pass the check by digests which were stored using the old one.
+* Faster algorithms like KangarooTwelve and BLAKE3 may be added as soon as fast and stable implementation will be available in Ruby.
 
 ## Install
 
-If you are on Windows, please install Ruby for Windows first.
-
 ```sh
+# Windows (please install Ruby for Windows first).
+gem install file-digests
+
+# Linux/macOS
 sudo gem install file-digests
 ```
 
 ## Usage
 
-```sh
-# For the current directory:
-#   1. Create database if needed (.file-digests.*)
-#   2. Add new files
-#   3. Check previously added files and report any found issues
-#   4. Track renames
-#   5. Find deleted files and ask to remove them from the database
-file-digests
-
-# Perform all the above but do not change the database, just report
-file-digests-test
-
-# Do not ask for confirmations (remove absent files from the database)
-file-digests-auto
-
-# Optional flags and arguments:
-#   AUTO - Do not ask for confirmations, same as executing "file-digests-auto"
-#   QUIET - less verbose, but stil report any found issues
-#   TEST_ONLY - do not change the database, same as executing "file-digests-test"
-AUTO=false QUIET=false TEST_ONLY=false file-digests [path/to/directory] [path/to/database_file]
-
-# If you want to check current directory and place database elsewere,
-# you could use "." as a path/to/directory following the path/to/database_file
-file-digests . ~/digests/my-digest.sqlite
-
-# Show the list of duplicate files, based on the information out of the database
-# Please build the database first by running "file-digests"
-file-digests-show-duplicates
-file-digests-show-duplicates [path/to/directory] [path/to/database_file]
+```
+Usage: file-digests [options] [path/to/directory] [path/to/database_file]
+       By default the current directory will be operated upon, and the database file will be placed to the current directory as well.
+       Should you wish to check current directory but place the database elsewhere, you could provide "." as a first argument, and the path to a database_file as a second.
+    -a, --auto                       Do not ask for any confirmation
+        --digest=DIGEST              Select a digest algorithm to use. Default is "BLAKE2b512".
+                                     You might also consider to use slower "SHA512-256" or even more slower "SHA3-256".
+                                     Digest algorithm should be one of the following: BLAKE2b512, SHA3-256, SHA512-256.
+                                     You only need to specify an algorithm on the first run, your choice will be saved to a database.
+                                     Any time later you could specify a new algorithm to change the current one.
+                                     Transition to a new algorithm will only occur if all files pass the check by digests which were stored using the old one.
+    -d, --duplicates                 Show the list of duplicate files, based on the information out of the database
+    -t, --test                       Perform only the test, do not modify the digest database
+    -q, --quiet                      Less verbose output, stil report any found issues
+    -v, --verbose                    More verbose output
+    -h, --help                       Prints this help
 ```
 
 ## Contributing

@@ -1,7 +1,0 @@
-#!/usr/bin/env ruby
-
-ENV["AUTO"] = "true"
-
-require 'file-digests'
-
-FileDigests.perform_check
