@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name        = 'file-digests'
-  s.version     = '0.0.23'
+  s.version     = '0.0.24'
   s.date        = '2020-10-12'
 
   s.summary     = 'file-digests'
@@ -13,6 +13,6 @@ Gem::Specification.new do |s|
   s.files       = ['lib/file-digests.rb']
   s.executables = ['file-digests']
 
-  s.add_runtime_dependency 'sqlite3', '>= 1.3.0'
-  s.add_runtime_dependency 'openssl', '>= 2.1.0'
+  s.add_runtime_dependency 'sqlite3', '~> 1.3'
+  s.add_runtime_dependency 'openssl', '~> 2.1'
 end

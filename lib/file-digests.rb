@@ -190,6 +190,10 @@ class FileDigests
         end
       end
 
+      if get_metadata("database_version") != "2"
+        STDERR.puts "This version of file-digests is only compartible with the database version 2. Current database version is #{get_metadata("database_version")}. To use this database, please install appropriate version if file-digest."
+        raise "Incompatible database version"
+      end
     end
   end
 
