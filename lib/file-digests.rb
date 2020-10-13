@@ -9,11 +9,13 @@ require 'sqlite3'
 
 class FileDigests
   DIGEST_ALGORITHMS=["BLAKE2b512", "SHA3-256", "SHA512-256"]
+  LEGACY_DIGEST_ALGORITHMS = ["SHA512", "SHA256"]
 
   def self.canonical_digest_algorithm_name(string)
     if string
-      index = DIGEST_ALGORITHMS.map(&:downcase).index(string.downcase)
-      index && DIGEST_ALGORITHMS[index]
+      algorithms = DIGEST_ALGORITHMS + LEGACY_DIGEST_ALGORITHMS
+      index = algorithms.map(&:downcase).index(string.downcase)
+      index && algorithms[index]
     end
   end
 
@@ -27,14 +29,14 @@ class FileDigests
 
   def self.parse_cli_options
     options = {}
-    
+
     OptionParser.new do |opts|
       opts.banner = [
         "Usage: file-digests [options] [path/to/directory] [path/to/database_file]",
         "       By default the current directory will be operated upon, and the database file will be placed to the current directory as well.",
         "       Should you wish to check current directory but place the database elsewhere, you could provide \".\" as a first argument, and the path to a database_file as a second."
       ].join "\n"
-    
+
       opts.on("-a", "--auto", "Do not ask for any confirmation") do
         options[:auto] = true
       end
@@ -49,8 +51,8 @@ class FileDigests
         'Transition to a new algorithm will only occur if all files pass the check by digests which were stored using the old one.'
       ) do |value|
         digest_algorithm = canonical_digest_algorithm_name(value)
-        unless digest_algorithm
-          STDERR.puts "ERROR: #{digest_algorithms_list_text}" 
+        unless DIGEST_ALGORITHMS.include?(digest_algorithm)
+          STDERR.puts "ERROR: #{digest_algorithms_list_text}"
           exit 1
         end
         options[:digest_algorithm] = digest_algorithm
@@ -212,7 +214,7 @@ class FileDigests
       end
 
       track_renames
-      
+
       if any_missing_files?
         if any_exceptions?
           STDERR.puts "Due to previously occurred errors, database cleanup from missing files will be skipped this time."
@@ -370,7 +372,7 @@ class FileDigests
     @db.execute *args, &block
   end
 
-  def nested_transaction(mode)
+  def nested_transaction(mode = :deferred)
     if @db.transaction_active?
       yield
     else
@@ -380,9 +382,9 @@ class FileDigests
     end
   end
 
-  def perhaps_transaction(condition, mode)
+  def perhaps_transaction(condition, mode = :deferred)
     if condition
-      @db.transaction(mode) do
+      nested_transaction(mode) do
         yield
       end
     else

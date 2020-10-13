@@ -15,6 +15,10 @@ sudo gem install file-digests-...
 
 ## Digest functions benchmark
 
+```sh
+openssl list -digest-algorithms
+```
+
 ### Windows
 
 On a 12.5 GB set of 2859 media files (hot run, files are mostly cached in RAM), on Windows i7 laptop:
