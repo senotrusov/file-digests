@@ -41,6 +41,10 @@ class FileDigests
         options[:auto] = true
       end
 
+      opts.on("--accept-fate", "Accept the current state of files that are likely damaged and update their digest data") do
+        options[:accept_fate] = true
+      end
+
       opts.on(
         '--digest=DIGEST',
         'Select a digest algorithm to use. Default is "BLAKE2b512".',
@@ -312,7 +316,7 @@ class FileDigests
         end
       end
     else
-      if found['mtime'] == mtime # Digest is different and mtime is the same
+      if found['mtime'] == mtime && !@options[:accept_fate] # Digest is different and mtime is the same
         @counters[:likely_damaged] += 1
         STDERR.puts "LIKELY DAMAGED: #{filename}"
       else
