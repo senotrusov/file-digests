@@ -46,7 +46,7 @@ class FileDigests
       end
 
       opts.on(
-        '--digest=DIGEST',
+        '-d', '--digest=DIGEST',
         'Select a digest algorithm to use. Default is "BLAKE2b512".',
         'You might also consider to use slower "SHA512-256" or even more slower "SHA3-256".',
         "#{digest_algorithms_list_text}.",
@@ -62,7 +62,7 @@ class FileDigests
         options[:digest_algorithm] = digest_algorithm
       end
 
-      opts.on("-d", "--duplicates", "Show the list of duplicate files, based on the information out of the database") do
+      opts.on("-p", "--duplicates", "Show the list of duplicate files, based on the information out of the database") do
         options[:action] = :show_duplicates
       end
 
