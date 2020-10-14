@@ -1,11 +1,11 @@
-require 'date'
-require 'digest'
-require 'fileutils'
-require 'openssl'
-require 'optparse'
-require 'pathname'
-require 'set'
-require 'sqlite3'
+require "date"
+require "digest"
+require "fileutils"
+require "openssl"
+require "optparse"
+require "pathname"
+require "set"
+require "sqlite3"
 
 class FileDigests
   DIGEST_ALGORITHMS=["BLAKE2b512", "SHA3-256", "SHA512-256"]
@@ -46,13 +46,13 @@ class FileDigests
       end
 
       opts.on(
-        '-d', '--digest=DIGEST',
+        "-d", "--digest=DIGEST",
         'Select a digest algorithm to use. Default is "BLAKE2b512".',
         'You might also consider to use slower "SHA512-256" or even more slower "SHA3-256".',
         "#{digest_algorithms_list_text}.",
-        'You only need to specify an algorithm on the first run, your choice will be saved to a database.',
-        'Any time later you could specify a new algorithm to change the current one.',
-        'Transition to a new algorithm will only occur if all files pass the check by digests which were stored using the old one.'
+        "You only need to specify an algorithm on the first run, your choice will be saved to a database.",
+        "Any time later you could specify a new algorithm to change the current one.",
+        "Transition to a new algorithm will only occur if all files pass the check by digests which were stored using the old one."
       ) do |value|
         digest_algorithm = canonical_digest_algorithm_name(value)
         unless DIGEST_ALGORITHMS.include?(digest_algorithm)
@@ -117,7 +117,7 @@ class FileDigests
     raise "Files path must be a readable directory" unless (File.directory?(@files_path) && File.readable?(@files_path))
 
     @digest_database_path = digest_database_path ? cleanup_path(digest_database_path) : @files_path
-    @digest_database_path += '.file-digests.sqlite' if File.directory?(@digest_database_path)
+    @digest_database_path += ".file-digests.sqlite" if File.directory?(@digest_database_path)
     ensure_dir_exists @digest_database_path.dirname
 
     if @options[:verbose]
@@ -187,7 +187,7 @@ class FileDigests
       # Convert database from 1st to 2nd version
       unless get_metadata("digest_algorithm")
         if get_metadata("database_version") == "1"
-          if File.exist?(@digest_database_path.dirname + '.file-digests.sha512')
+          if File.exist?(@digest_database_path.dirname + ".file-digests.sha512")
             set_metadata("digest_algorithm", "SHA512")
           else
             set_metadata("digest_algorithm", "SHA256")
@@ -197,7 +197,7 @@ class FileDigests
       end
 
       if get_metadata("database_version") != "2"
-        STDERR.puts "This version of file-digests (#{file_digests_gem_version || 'unknown'}) is only compartible with the database version 2. Current database version is #{get_metadata("database_version")}. To use this database, please install appropriate version if file-digest."
+        STDERR.puts "This version of file-digests (#{file_digests_gem_version || "unknown"}) is only compartible with the database version 2. Current database version is #{get_metadata("database_version")}. To use this database, please install appropriate version if file-digest."
         raise "Incompatible database version"
       end
     end
@@ -255,12 +255,12 @@ class FileDigests
   def show_duplicates
     current_digest = nil
     query_duplicates.each do |found|
-      if current_digest != found['digest']
+      if current_digest != found["digest"]
         puts "" if current_digest
-        current_digest = found['digest']
-        puts "#{found['digest']}:"
+        current_digest = found["digest"]
+        puts "#{found["digest"]}:"
       end
-      puts "  #{found['filename']}"
+      puts "  #{found["filename"]}"
     end
   end
 
@@ -286,7 +286,7 @@ class FileDigests
       return
     end
 
-    normalized_filename = filename.delete_prefix("#{@files_path.to_s}/").encode('utf-8', universal_newline: true).unicode_normalize(:nfkc)
+    normalized_filename = filename.delete_prefix("#{@files_path.to_s}/").encode("utf-8", universal_newline: true).unicode_normalize(:nfkc)
     mtime_string = time_to_database stat.mtime
 
     process_file_indeed normalized_filename, mtime_string, get_file_digest(filename)
@@ -306,25 +306,25 @@ class FileDigests
 
   def process_previously_seen_file found, filename, mtime, digest
     @missing_files.delete(filename)
-    if found['digest'] == digest
+    if found["digest"] == digest
       @counters[:good] += 1
       puts "GOOD: #{filename}" if @options[:verbose]
       unless @options[:test_only]
-        if found['mtime'] == mtime
-          touch_digest_check_time found['id']
+        if found["mtime"] == mtime
+          touch_digest_check_time found["id"]
         else
-          update_mtime mtime, found['id']
+          update_mtime mtime, found["id"]
         end
       end
     else
-      if found['mtime'] == mtime && !@options[:accept_fate] # Digest is different and mtime is the same
+      if found["mtime"] == mtime && !@options[:accept_fate] # Digest is different and mtime is the same
         @counters[:likely_damaged] += 1
         STDERR.puts "LIKELY DAMAGED: #{filename}"
       else
         @counters[:updated] += 1
         puts "UPDATED: #{filename}" unless @options[:quiet]
         unless @options[:test_only]
-          update_mtime_and_digest mtime, digest, found['id']
+          update_mtime_and_digest mtime, digest, found["id"]
         end
       end
     end
@@ -433,14 +433,14 @@ class FileDigests
   end
 
   def time_to_database time
-    time.utc.strftime('%Y-%m-%d %H:%M:%S')
+    time.utc.strftime("%Y-%m-%d %H:%M:%S")
   end
 
 
   # Filesystem-related helpers
 
   def patch_path_string path
-    Gem.win_platform? ? path.gsub(/\\/, '/') : path
+    Gem.win_platform? ? path.gsub(/\\/, "/") : path
   end
 
   def cleanup_path path
@@ -458,13 +458,13 @@ class FileDigests
   end
 
   def walk_files
-    Dir.glob(@files_path + '**' + '*', File::FNM_DOTMATCH) do |filename|
+    Dir.glob(@files_path + "**" + "*", File::FNM_DOTMATCH) do |filename|
       yield filename
     end
   end
 
   def get_file_digest filename
-    File.open(filename, 'rb') do |io|
+    File.open(filename, "rb") do |io|
       digest = OpenSSL::Digest.new(@digest_algorithm)
       new_digest = OpenSSL::Digest.new(@new_digest_algorithm) if @new_digest_algorithm
 
@@ -506,13 +506,13 @@ class FileDigests
     start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     yield
     elapsed = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start)
-    puts "Elapsed time: #{elapsed.to_i / 3600}h #{(elapsed.to_i % 3600) / 60}m #{'%.3f' % (elapsed % 60)}s" unless @options[:quiet]
+    puts "Elapsed time: #{elapsed.to_i / 3600}h #{(elapsed.to_i % 3600) / 60}m #{"%.3f" % (elapsed % 60)}s" unless @options[:quiet]
   end
 
   def print_file_exception exception, filename
     STDERR.print "EXCEPTION: #{exception.message}, processing file: "
     begin
-      STDERR.print filename.encode('utf-8', universal_newline: true)
+      STDERR.print filename.encode("utf-8", universal_newline: true)
     rescue
       STDERR.print "(Unable to encode file name to utf-8) "
       STDERR.print filename
