@@ -43,7 +43,7 @@ Usage: file-digests [options] [path/to/directory] [path/to/database_file]
        By default the current directory will be operated upon, and the database file will be placed to the current directory as well.
        Should you wish to check current directory but place the database elsewhere, you could provide "." as a first argument, and the path to a database_file as a second.
     -a, --auto                       Do not ask for any confirmation
-        --accept-fate                Accept the current state of files that are likely damaged and update their digest data
+    -f, --accept-fate                Accept the current state of files that are likely damaged and update their digest data
         --digest=DIGEST              Select a digest algorithm to use. Default is "BLAKE2b512".
                                      You might also consider to use slower "SHA512-256" or even more slower "SHA3-256".
                                      Digest algorithm should be one of the following: BLAKE2b512, SHA3-256, SHA512-256.

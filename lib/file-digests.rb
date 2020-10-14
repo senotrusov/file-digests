@@ -41,7 +41,7 @@ class FileDigests
         options[:auto] = true
       end
 
-      opts.on("--accept-fate", "Accept the current state of files that are likely damaged and update their digest data") do
+      opts.on("-f", "--accept-fate", "Accept the current state of files that are likely damaged and update their digest data") do
         options[:accept_fate] = true
       end
 
