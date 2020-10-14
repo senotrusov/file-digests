@@ -132,11 +132,11 @@ class FileDigests
 
     file_digests_gem_version = Gem.loaded_specs["file-digests"]&.version&.to_s
 
-    execute 'PRAGMA encoding = "UTF-8"'
-    execute 'PRAGMA journal_mode = "WAL"'
-    execute 'PRAGMA synchronous = "NORMAL"'
-    execute 'PRAGMA locking_mode = "EXCLUSIVE"'
-    execute 'PRAGMA cache_size = "5000"'
+    execute "PRAGMA encoding = 'UTF-8'"
+    execute "PRAGMA journal_mode = 'WAL'"
+    execute "PRAGMA synchronous = 'NORMAL'"
+    execute "PRAGMA locking_mode = 'EXCLUSIVE'"
+    execute "PRAGMA cache_size = '5000'"
 
     @db.transaction(:exclusive) do
       metadata_table_was_created = false
@@ -247,6 +247,8 @@ class FileDigests
       end
 
       set_metadata(@options[:test_only] ? "latest_test_only_check_time" : "latest_complete_check_time", time_to_database(Time.now))
+
+      execute "PRAGMA wal_checkpoint(TRUNCATE)"
 
       print_counters
     end
@@ -398,7 +400,7 @@ class FileDigests
   end
 
   def table_exist? table_name
-    execute("SELECT name FROM sqlite_master WHERE type='table' AND name = '#{table_name}'").length == 1
+    execute("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", table_name).length == 1
   end
 
   def prepare_method name, query
