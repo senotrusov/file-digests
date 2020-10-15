@@ -75,7 +75,12 @@ class FileDigests
         options[:quiet] = true
       end
 
-      opts.on("-t", "--test", "Perform only the test, do not modify the digest database.") do
+      opts.on(
+        "-t", "--test",
+        "Perform a test to verify directory contents.",
+        "Compare actual files with the stored digests, check if any files are missing.",
+        "Digest database will not be modified."
+      ) do
         options[:test_only] = true
       end
 

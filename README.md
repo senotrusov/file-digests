@@ -6,6 +6,8 @@ If you move your files around, perhaps across platforms, maybe through unreliabl
 
 It will also help you to find issues with your storage: silent data corruption, bitflips/bitrot, bad blocks, other hardware or software faults.
 
+You could use this utility to veryfy that restore from your backup was sucsessful.
+
 It can show a list of duplicate files as well.
 
 It is a CLI utility, written on Ruby. It's cross-platform (Linux/UNIX/Windows/macOS). It's tested to run on Ubuntu 20.04, Windows 10, and macOS Catalina.
@@ -53,7 +55,9 @@ Usage: file-digests [options] [path/to/directory] [path/to/database_file]
     -h, --help                       Prints this help.
     -p, --duplicates                 Show the list of duplicate files, based on the information out of the database.
     -q, --quiet                      Less verbose output, stil report any found issues.
-    -t, --test                       Perform only the test, do not modify the digest database.
+    -t, --test                       Perform a test to verify directory contents.
+                                     Compare actual files with the stored digests, check if any files are missing.
+                                     Digest database will not be modified.
     -v, --verbose                    More verbose output.
 ```
 
