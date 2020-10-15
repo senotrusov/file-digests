@@ -99,13 +99,15 @@ class FileDigests
     initialize_paths files_path, digest_database_path
     initialize_database
 
-    if @digest_algorithm = canonical_digest_algorithm_name(get_metadata("digest_algorithm"))
-      if @options[:digest_algorithm] && @options[:digest_algorithm] != @digest_algorithm
-        @new_digest_algorithm = @options[:digest_algorithm]
+    @db.transaction(:exclusive) do
+      if @digest_algorithm = canonical_digest_algorithm_name(get_metadata("digest_algorithm"))
+        if @options[:digest_algorithm] && @options[:digest_algorithm] != @digest_algorithm
+          @new_digest_algorithm = @options[:digest_algorithm]
+        end
+      else
+        @digest_algorithm = (@options[:digest_algorithm] || "BLAKE2b512")
+        set_metadata "digest_algorithm", @digest_algorithm
       end
-    else
-      @digest_algorithm = (@options[:digest_algorithm] || "BLAKE2b512")
-      set_metadata "digest_algorithm", @digest_algorithm
     end
 
     puts "Using #{@digest_algorithm} digest algorithm" if @options[:verbose]
@@ -129,14 +131,17 @@ class FileDigests
   def initialize_database
     @db = SQLite3::Database.new @digest_database_path.to_s
     @db.results_as_hash = true
+    @db.busy_timeout = 5000
 
     file_digests_gem_version = Gem.loaded_specs["file-digests"]&.version&.to_s
 
     execute "PRAGMA encoding = 'UTF-8'"
+    execute "PRAGMA locking_mode = 'EXCLUSIVE'"
     execute "PRAGMA journal_mode = 'WAL'"
     execute "PRAGMA synchronous = 'NORMAL'"
-    execute "PRAGMA locking_mode = 'EXCLUSIVE'"
     execute "PRAGMA cache_size = '5000'"
+
+    integrity_check
 
     @db.transaction(:exclusive) do
       metadata_table_was_created = false
@@ -217,7 +222,9 @@ class FileDigests
         end
       end
 
-      track_renames
+      nested_transaction do
+        track_renames
+      end
 
       if any_missing_files?
         if any_exceptions?
@@ -225,7 +232,9 @@ class FileDigests
         else
           print_missing_files
           if !@options[:test_only] && (@options[:auto] || confirm("Remove missing files from the database"))
-            remove_missing_files
+            nested_transaction do
+              remove_missing_files
+            end
           end
         end
       end
@@ -248,6 +257,8 @@ class FileDigests
 
       set_metadata(@options[:test_only] ? "latest_test_only_check_time" : "latest_complete_check_time", time_to_database(Time.now))
 
+      execute "PRAGMA optimize"
+      execute "VACUUM"
       execute "PRAGMA wal_checkpoint(TRUNCATE)"
 
       print_counters
@@ -291,7 +302,9 @@ class FileDigests
     normalized_filename = filename.delete_prefix("#{@files_path.to_s}/").encode("utf-8", universal_newline: true).unicode_normalize(:nfkc)
     mtime_string = time_to_database stat.mtime
 
-    process_file_indeed normalized_filename, mtime_string, get_file_digest(filename)
+    nested_transaction do
+      process_file_indeed normalized_filename, mtime_string, get_file_digest(filename)
+    end
 
   rescue => exception
     @counters[:exceptions] += 1
@@ -324,7 +337,7 @@ class FileDigests
         STDERR.puts "LIKELY DAMAGED: #{filename}"
       else
         @counters[:updated] += 1
-        puts "UPDATED: #{filename}" unless @options[:quiet]
+        puts "UPDATED#{" (FATE ACCEPTED)" if found["mtime"] == mtime && @options[:accept_fate]}: #{filename}" unless @options[:quiet]
         unless @options[:test_only]
           update_mtime_and_digest mtime, digest, found["id"]
         end
@@ -364,12 +377,10 @@ class FileDigests
   end
 
   def remove_missing_files
-    nested_transaction do
-      @missing_files.each do |filename, digest|
-        delete_by_filename filename
-      end
-      @missing_files = {}
+    @missing_files.each do |filename, digest|
+      delete_by_filename filename
     end
+    @missing_files = {}
   end
 
 
@@ -377,6 +388,12 @@ class FileDigests
 
   def execute *args, &block
     @db.execute *args, &block
+  end
+
+  def integrity_check
+    if execute("PRAGMA integrity_check")&.first&.fetch("integrity_check") != "ok"
+      raise "Database integrity check failed"
+    end
   end
 
   def nested_transaction(mode = :deferred)
