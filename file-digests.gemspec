@@ -13,7 +13,6 @@ Gem::Specification.new do |s|
   s.files       = ['lib/file-digests.rb']
   s.executables = ['file-digests']
 
-  s.add_runtime_dependency 'concurrent-ruby', '~> 1.1'
   s.add_runtime_dependency 'openssl', '~> 2.1'
   s.add_runtime_dependency 'sqlite3', '~> 1.3'
 end
