@@ -6,6 +6,7 @@ require "optparse"
 require "pathname"
 require "set"
 require "sqlite3"
+require "concurrent"
 
 class FileDigests
   DIGEST_ALGORITHMS=["BLAKE2b512", "SHA3-256", "SHA512-256"]
@@ -37,16 +38,31 @@ class FileDigests
         "       Should you wish to check current directory but place the database elsewhere, you could provide \".\" as a first argument, and the path to a database_file as a second."
       ].join "\n"
 
-      opts.on("-a", "--auto", "Do not ask for any confirmation") do
+      opts.on("-a", "--auto", "Do not ask for any confirmation.") do
         options[:auto] = true
       end
 
-      opts.on("-f", "--accept-fate", "Accept the current state of files that are likely damaged and update their digest data") do
-        options[:accept_fate] = true
+      opts.on(
+        "-c", "--concurrency [NUMBER]",
+        "Perform disk reads and digest calculations in parallel.",
+        "Number of workers may be specified, otherwise it will match to a number of physical processors."
+      ) do |value|
+        if value
+          workers = value.to_i
+          raise "Number of workers, if specified, should be a positive integer" unless workers >= 1
+        else
+          workers = begin
+            Concurrent.physical_processor_count
+          rescue
+            STDERR.puts "WARNING: Unable to determine the number of physical processors"
+            1
+          end
+        end
+        puts options[:concurrency] = workers
       end
 
       opts.on(
-        "-d", "--digest=DIGEST",
+        "-d", "--digest DIGEST",
         'Select a digest algorithm to use. Default is "BLAKE2b512".',
         'You might also consider to use slower "SHA512-256" or even more slower "SHA3-256".',
         "#{digest_algorithms_list_text}.",
@@ -62,26 +78,31 @@ class FileDigests
         options[:digest_algorithm] = digest_algorithm
       end
 
-      opts.on("-p", "--duplicates", "Show the list of duplicate files, based on the information out of the database") do
-        options[:action] = :show_duplicates
+      opts.on("-f", "--accept-fate", "Accept the current state of files that are likely damaged and update their digest data.") do
+        options[:accept_fate] = true
       end
 
-      opts.on("-t", "--test", "Perform only the test, do not modify the digest database") do
-        options[:test_only] = true
-      end
-
-      opts.on("-q", "--quiet", "Less verbose output, stil report any found issues") do
-        options[:quiet] = true
-      end
-
-      opts.on("-v", "--verbose", "More verbose output") do
-        options[:verbose] = true
-      end
-
-      opts.on("-h", "--help", "Prints this help") do
+      opts.on("-h", "--help", "Prints this help.") do
         puts opts
         exit
       end
+
+      opts.on("-p", "--duplicates", "Show the list of duplicate files, based on the information out of the database.") do
+        options[:action] = :show_duplicates
+      end
+
+      opts.on("-q", "--quiet", "Less verbose output, stil report any found issues.") do
+        options[:quiet] = true
+      end
+
+      opts.on("-t", "--test", "Perform only the test, do not modify the digest database.") do
+        options[:test_only] = true
+      end
+
+      opts.on("-v", "--verbose", "More verbose output.") do
+        options[:verbose] = true
+      end
+
     end.parse!
     options
   end
@@ -109,6 +130,12 @@ class FileDigests
         set_metadata "digest_algorithm", @digest_algorithm
       end
     end
+
+    if @options[:concurrency]
+      @pool = Concurrent::FixedThreadPool.new(@options[:concurrency])
+    end
+
+    @storage_mutex = Mutex.new
 
     puts "Using #{@digest_algorithm} digest algorithm" if @options[:verbose]
   end
@@ -218,7 +245,13 @@ class FileDigests
 
       measure_time do
         walk_files do |filename|
-          process_file filename
+          perhaps_pool do
+            process_file filename
+          end
+        end
+        if @pool
+          @pool.shutdown
+          @pool.wait_for_termination
         end
       end
 
@@ -301,13 +334,18 @@ class FileDigests
 
     normalized_filename = filename.delete_prefix("#{@files_path.to_s}/").encode("utf-8", universal_newline: true).unicode_normalize(:nfkc)
     mtime_string = time_to_database stat.mtime
+    digest = get_file_digest(filename)
 
-    nested_transaction do
-      process_file_indeed normalized_filename, mtime_string, get_file_digest(filename)
+    @storage_mutex.synchronize do
+      nested_transaction do
+        process_file_indeed normalized_filename, mtime_string, digest
+      end
     end
 
   rescue => exception
-    @counters[:exceptions] += 1
+    @storage_mutex.synchronize do
+      @counters[:exceptions] += 1
+    end
     print_file_exception exception, filename
   end
 
@@ -453,6 +491,18 @@ class FileDigests
 
   def time_to_database time
     time.utc.strftime("%Y-%m-%d %H:%M:%S")
+  end
+
+
+  # Pool helpers
+  def perhaps_pool
+    if @pool
+      @pool.post do
+        yield
+      end
+    else
+      yield
+    end
   end
 
 
