@@ -126,6 +126,8 @@ class FileDigests
     @digest_database_path += ".file-digests.sqlite" if File.directory?(@digest_database_path)
     ensure_dir_exist @digest_database_path.dirname
 
+    @digest_database_files = ["#{@digest_database_path}", "#{@digest_database_path}-wal", "#{@digest_database_path}-shm"]
+
     if @options[:verbose]
       puts "Target directory: #{@files_path}"
       puts "Database location: #{@digest_database_path}"
@@ -265,6 +267,8 @@ class FileDigests
       execute "VACUUM"
       execute "PRAGMA wal_checkpoint(TRUNCATE)"
 
+      hide_database_files
+
       print_counters
     end
   end
@@ -296,9 +300,7 @@ class FileDigests
 
     raise "File is not readable" unless stat.readable?
 
-    if filename == "#{@digest_database_path}" ||
-       filename == "#{@digest_database_path}-wal" ||
-       filename == "#{@digest_database_path}-shm"
+    if @digest_database_files.include?(filename)
       puts "SKIPPING DATABASE FILE: #{filename}" if @options[:verbose]
       return
     end
@@ -458,6 +460,16 @@ class FileDigests
 
   def time_to_database time
     time.utc.strftime("%Y-%m-%d %H:%M:%S")
+  end
+
+  def hide_database_files
+    if Gem.win_platform?
+      @digest_database_files.each do |file|
+        if File.exist?(file)
+          system "attrib", "+H", file, exception: true
+        end
+      end
+    end
   end
 
 
