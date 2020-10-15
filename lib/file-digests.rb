@@ -498,6 +498,7 @@ class FileDigests
   end
 
   def walk_files
+    puts "Gathering the list of files..." if @options[:verbose]
     Dir.glob(@files_path + "**" + "*", File::FNM_DOTMATCH) do |filename|
       yield filename
     end
