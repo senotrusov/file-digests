@@ -124,7 +124,7 @@ class FileDigests
 
     @digest_database_path = digest_database_path ? cleanup_path(digest_database_path) : @files_path
     @digest_database_path += ".file-digests.sqlite" if File.directory?(@digest_database_path)
-    ensure_dir_exists @digest_database_path.dirname
+    ensure_dir_exist @digest_database_path.dirname
 
     if @options[:verbose]
       puts "Target directory: #{@files_path}"
@@ -471,7 +471,7 @@ class FileDigests
     Pathname.new(patch_path_string(path)).cleanpath
   end
 
-  def ensure_dir_exists path
+  def ensure_dir_exist path
     if File.exist?(path)
       unless File.directory?(path)
         raise "#{path} is not a directory"
