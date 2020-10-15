@@ -58,7 +58,7 @@ class FileDigests
             1
           end
         end
-        puts options[:concurrency] = workers
+        options[:concurrency] = workers
       end
 
       opts.on(
