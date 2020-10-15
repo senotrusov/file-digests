@@ -101,16 +101,19 @@ class FileDigests
     initialize_database
 
     @db.transaction(:exclusive) do
-      if @digest_algorithm = canonical_digest_algorithm_name(get_metadata("digest_algorithm"))
-        if @options[:digest_algorithm] && @options[:digest_algorithm] != @digest_algorithm
-          @new_digest_algorithm = @options[:digest_algorithm]
+      if db_digest_algorithm = get_metadata("digest_algorithm")
+        if @digest_algorithm = canonical_digest_algorithm_name(db_digest_algorithm)
+          if @options[:digest_algorithm] && @options[:digest_algorithm] != @digest_algorithm
+            @new_digest_algorithm = @options[:digest_algorithm]
+          end
+        else
+          raise "Database contains data for unsupported digest algorithm: #{db_digest_algorithm}"
         end
       else
         @digest_algorithm = (@options[:digest_algorithm] || "BLAKE2b512")
         set_metadata "digest_algorithm", @digest_algorithm
       end
     end
-
     puts "Using #{@digest_algorithm} digest algorithm" if @options[:verbose]
   end
 
