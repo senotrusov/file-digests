@@ -263,14 +263,13 @@ class FileDigests
 
       set_metadata(@options[:test_only] ? "latest_test_only_check_time" : "latest_complete_check_time", time_to_database(Time.now))
 
-      execute "PRAGMA optimize"
-      execute "VACUUM"
-      execute "PRAGMA wal_checkpoint(TRUNCATE)"
-
-      hide_database_files
-
       print_counters
     end
+    execute "PRAGMA optimize"
+    execute "VACUUM"
+    execute "PRAGMA wal_checkpoint(TRUNCATE)"
+
+    hide_database_files
   end
 
   def show_duplicates
