@@ -229,6 +229,7 @@ class FileDigests
       end
 
       nested_transaction do
+        puts "Tracking renames..." if @options[:verbose]
         track_renames
       end
 
@@ -239,6 +240,7 @@ class FileDigests
           print_missing_files
           if !@options[:test_only] && (@options[:auto] || confirm("Remove missing files from the database"))
             nested_transaction do
+              puts "Removing missing files..." if @options[:verbose]
               remove_missing_files
             end
           end
@@ -249,6 +251,7 @@ class FileDigests
         if any_missing_files? || any_likely_damaged? || any_exceptions?
           STDERR.puts "ERROR: New digest algorithm will not be in effect until there are files that are missing, likely damaged, or processed with an exception."
         else
+          puts "Updating database to a new digest algorithm..." if @options[:verbose]
           @new_digests.each do |old_digest, new_digest|
             update_digest_to_new_digest new_digest, old_digest
           end
@@ -265,6 +268,8 @@ class FileDigests
 
       print_counters
     end
+    
+    puts "Performing database maintenance..." if @options[:verbose]
     execute "PRAGMA optimize"
     execute "VACUUM"
     execute "PRAGMA wal_checkpoint(TRUNCATE)"
