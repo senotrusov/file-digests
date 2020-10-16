@@ -22,7 +22,8 @@ require "set"
 require "sqlite3"
 
 class FileDigests
-  DIGEST_ALGORITHMS=["BLAKE2b512", "SHA3-256", "SHA512-256"]
+  VERSION = Gem.loaded_specs["file-digests"]&.version&.to_s
+  DIGEST_ALGORITHMS = ["BLAKE2b512", "SHA3-256", "SHA512-256"]
   LEGACY_DIGEST_ALGORITHMS = ["SHA512", "SHA256"]
 
   def self.canonical_digest_algorithm_name(string)
@@ -159,8 +160,6 @@ class FileDigests
     @db.results_as_hash = true
     @db.busy_timeout = 5000
 
-    file_digests_gem_version = Gem.loaded_specs["file-digests"]&.version&.to_s
-
     execute "PRAGMA encoding = 'UTF-8'"
     execute "PRAGMA locking_mode = 'EXCLUSIVE'"
     execute "PRAGMA journal_mode = 'WAL'"
@@ -182,7 +181,7 @@ class FileDigests
       prepare_method :set_metadata_query, "INSERT INTO metadata (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value=excluded.value"
       prepare_method :get_metadata_query, "SELECT value FROM metadata WHERE key = ?"
 
-      set_metadata("metadata_table_created_by_gem_version", file_digests_gem_version) if file_digests_gem_version && metadata_table_was_created
+      set_metadata("metadata_table_created_by_gem_version", FileDigests::VERSION) if FileDigests::VERSION && metadata_table_was_created
 
       # Heuristic to detect database version 1 (metadata was not stored back then)
       unless get_metadata("database_version")
@@ -199,7 +198,7 @@ class FileDigests
           digest TEXT NOT NULL,
           digest_check_time TEXT NOT NULL)"
         execute "CREATE UNIQUE INDEX digests_filename ON digests(filename)"
-        set_metadata("digests_table_created_by_gem_version", file_digests_gem_version) if file_digests_gem_version
+        set_metadata("digests_table_created_by_gem_version", FileDigests::VERSION) if FileDigests::VERSION
       end
 
       prepare_method :insert, "INSERT INTO digests (filename, mtime, digest, digest_check_time) VALUES (?, ?, ?, datetime('now'))"
@@ -226,11 +225,8 @@ class FileDigests
           set_metadata "database_version", "2"
         end
       end
-
-      if get_metadata("database_version") != "2"
-        STDERR.puts "This version of file-digests (#{file_digests_gem_version || "unknown"}) is only compartible with the database version 2. Current database version is #{get_metadata("database_version")}. To use this database, please install appropriate version if file-digest."
-        raise "Incompatible database version"
-      end
+  
+      check_if_database_is_at_certain_version "2"
     end
   end
 
@@ -493,6 +489,14 @@ class FileDigests
           system "attrib", "+H", file, exception: true
         end
       end
+    end
+  end
+
+  def check_if_database_is_at_certain_version target_version
+    current_version = get_metadata("database_version")
+    if current_version != target_version
+      STDERR.puts "This version of file-digests (#{FileDigests::VERSION || "unknown"}) is only compartible with the database version #{target_version}. Current database version is #{current_version}. To use this database, please install appropriate version if file-digest."
+      raise "Incompatible database version"
     end
   end
 
