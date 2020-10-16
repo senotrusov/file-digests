@@ -27,6 +27,7 @@ if [ -n "${file}" ] && [ -f "${file}" ]; then
   sudo gem install "${file}" || fail
   sudo gem cleanup "${file}" || fail
   gem push "${file}" || fail
+  rm -f file-digests-*.gem || fail
 else
   fail "Unable to find ${file}"
 fi
