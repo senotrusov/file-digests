@@ -115,6 +115,7 @@ class FileDigests
 
   def initialize files_path, digest_database_path, options = {}
     @options = options
+    @user_input_wait_time = 0
 
     initialize_paths files_path, digest_database_path
     initialize_database
@@ -234,66 +235,66 @@ class FileDigests
   end
 
   def perform_check
-    perhaps_transaction(@new_digest_algorithm, :exclusive) do
-      @counters = {good: 0, updated: 0, new: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
-      @new_files = {}
-      @new_digests = {}
+    measure_time do
+      perhaps_transaction(@new_digest_algorithm, :exclusive) do
+        @counters = {good: 0, updated: 0, new: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
 
-      @missing_files = Hash[@db.prepare("SELECT filename, digest FROM digests").execute!]
+        @new_files = {}
+        @new_digests = {}
+        @missing_files = Hash[@db.prepare("SELECT filename, digest FROM digests").execute!]
 
-      measure_time do
         walk_files do |filename|
           process_file filename
         end
-      end
 
-      nested_transaction do
-        puts "Tracking renames..." if @options[:verbose]
-        track_renames
-      end
+        nested_transaction do
+          puts "Tracking renames..." if @options[:verbose]
+          track_renames
+        end
 
-      if any_missing_files?
-        if any_exceptions?
-          STDERR.puts "Due to previously occurred errors, database cleanup from missing files will be skipped this time."
-        else
-          print_missing_files
-          if !@options[:test_only] && (@options[:auto] || confirm("Remove missing files from the database"))
-            nested_transaction do
-              puts "Removing missing files..." if @options[:verbose]
-              remove_missing_files
+        if any_missing_files?
+          if any_exceptions?
+            STDERR.puts "Due to previously occurred errors, missing files will not removed from the database."
+          else
+            print_missing_files
+            if !@options[:test_only] && (@options[:auto] || confirm("Remove missing files from the database"))
+              nested_transaction do
+                puts "Removing missing files..." if @options[:verbose]
+                remove_missing_files
+              end
             end
           end
         end
-      end
 
-      if @new_digest_algorithm && !@options[:test_only]
-        if any_missing_files? || any_likely_damaged? || any_exceptions?
-          STDERR.puts "ERROR: New digest algorithm will not be in effect until there are files that are missing, likely damaged, or processed with an exception."
-        else
-          puts "Updating database to a new digest algorithm..." if @options[:verbose]
-          @new_digests.each do |old_digest, new_digest|
-            update_digest_to_new_digest new_digest, old_digest
+        if @new_digest_algorithm && !@options[:test_only]
+          if any_missing_files? || any_likely_damaged? || any_exceptions?
+            STDERR.puts "ERROR: New digest algorithm will not be in effect until there are files that are missing, likely damaged, or processed with an exception."
+          else
+            puts "Updating database to a new digest algorithm..." if @options[:verbose]
+            @new_digests.each do |old_digest, new_digest|
+              update_digest_to_new_digest new_digest, old_digest
+            end
+            set_metadata "digest_algorithm", @new_digest_algorithm
+            puts "Transition to a new digest algorithm complete: #{@new_digest_algorithm}"
           end
-          set_metadata "digest_algorithm", @new_digest_algorithm
-          puts "Transition to a new digest algorithm complete: #{@new_digest_algorithm}"
         end
+
+        if any_likely_damaged? || any_exceptions?
+          STDERR.puts "PLEASE REVIEW ERRORS THAT WERE OCCURRED!"
+        end
+
+        set_metadata(@options[:test_only] ? "latest_test_only_check_time" : "latest_complete_check_time", time_to_database(Time.now))
+
+        print_counters
       end
+      
+      puts "Performing database maintenance..." if @options[:verbose]
+      execute "PRAGMA optimize"
+      execute "VACUUM"
+      execute "PRAGMA wal_checkpoint(TRUNCATE)"
 
-      if any_likely_damaged? || any_exceptions?
-        STDERR.puts "PLEASE REVIEW ERRORS THAT WERE OCCURRED!"
-      end
-
-      set_metadata(@options[:test_only] ? "latest_test_only_check_time" : "latest_complete_check_time", time_to_database(Time.now))
-
-      print_counters
+      hide_database_files
     end
-    
-    puts "Performing database maintenance..." if @options[:verbose]
-    execute "PRAGMA optimize"
-    execute "VACUUM"
-    execute "PRAGMA wal_checkpoint(TRUNCATE)"
-
-    hide_database_files
   end
 
   def show_duplicates
@@ -558,14 +559,16 @@ class FileDigests
   def confirm text
     if STDIN.tty? && STDOUT.tty?
       puts "#{text} (y/n)?"
+      start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       STDIN.gets.strip.downcase == "y"
+      @user_input_wait_time += (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start)
     end
   end
 
   def measure_time
     start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     yield
-    elapsed = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start)
+    elapsed = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start) - @user_input_wait_time
     puts "Elapsed time: #{elapsed.to_i / 3600}h #{(elapsed.to_i % 3600) / 60}m #{"%.3f" % (elapsed % 60)}s" unless @options[:quiet]
   end
 
