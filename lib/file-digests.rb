@@ -15,7 +15,6 @@
 require "date"
 require "digest"
 require "fileutils"
-require "find"
 require "openssl"
 require "optparse"
 require "pathname"
@@ -562,8 +561,9 @@ class FileDigests
   end
 
   def walk_files
-    Find.find(@files_path) do |path|
-      yield path
+    puts "Gathering the list of files..." if @options[:verbose]
+    Dir.glob(@files_path + "**" + "*", File::FNM_DOTMATCH) do |filename|
+      yield filename
     end
   end
 
