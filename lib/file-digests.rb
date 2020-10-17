@@ -174,7 +174,6 @@ class FileDigests
         execute "CREATE TABLE metadata (
           key TEXT NOT NULL PRIMARY KEY,
           value TEXT)"
-        execute "CREATE UNIQUE INDEX metadata_key ON metadata(key)"
         metadata_table_was_created = true
       end
 
@@ -198,20 +197,19 @@ class FileDigests
           digest TEXT NOT NULL,
           digest_check_time TEXT NOT NULL)"
         execute "CREATE UNIQUE INDEX digests_filename ON digests(filename)"
+        execute "CREATE INDEX digests_digest ON digests(digest)"
         set_metadata("digests_table_created_by_gem_version", FileDigests::VERSION) if FileDigests::VERSION
       end
 
-      prepare_method :insert, "INSERT INTO digests (filename, mtime, digest, digest_check_time) VALUES (?, ?, ?, datetime('now'))"
-      prepare_method :find_by_filename_query, "SELECT id, mtime, digest FROM digests WHERE filename = ?"
-      prepare_method :touch_digest_check_time, "UPDATE digests SET digest_check_time = datetime('now') WHERE id = ?"
-      prepare_method :update_mtime_and_digest, "UPDATE digests SET mtime = ?, digest = ?, digest_check_time = datetime('now') WHERE id = ?"
-      prepare_method :update_mtime, "UPDATE digests SET mtime = ?, digest_check_time = datetime('now') WHERE id = ?"
-      prepare_method :delete_by_filename, "DELETE FROM digests WHERE filename = ?"
-      prepare_method :query_duplicates, "SELECT digest, filename FROM digests WHERE digest IN (SELECT digest FROM digests GROUP BY digest HAVING count(*) > 1) ORDER BY digest, filename;"
-      prepare_method :update_digest_to_new_digest, "UPDATE digests SET digest = ? WHERE digest = ?"
+      prepare_method :digests_insert, "INSERT INTO digests (filename, mtime, digest, digest_check_time) VALUES (?, ?, ?, datetime('now'))"
+      prepare_method :digests_find_by_filename_query, "SELECT id, mtime, digest FROM digests WHERE filename = ?"
+      prepare_method :digests_touch_check_time, "UPDATE digests SET digest_check_time = datetime('now') WHERE id = ?"
+      prepare_method :digests_update_mtime_and_digest, "UPDATE digests SET mtime = ?, digest = ?, digest_check_time = datetime('now') WHERE id = ?"
+      prepare_method :digests_update_mtime, "UPDATE digests SET mtime = ?, digest_check_time = datetime('now') WHERE id = ?"
+      prepare_method :digests_select_duplicates, "SELECT digest, filename FROM digests WHERE digest IN (SELECT digest FROM digests GROUP BY digest HAVING count(*) > 1) ORDER BY digest, filename;"
 
       unless get_metadata("database_version")
-        set_metadata "database_version", "2"
+        set_metadata "database_version", "3"
       end
 
       # Convert database from 1st to 2nd version
@@ -225,19 +223,55 @@ class FileDigests
           set_metadata "database_version", "2"
         end
       end
+
+      if get_metadata("database_version") == "2"
+        execute "CREATE INDEX digests_digest ON digests(digest)"
+        set_metadata "database_version", "3"
+      end
   
-      check_if_database_is_at_certain_version "2"
+      check_if_database_is_at_certain_version "3"
+
+      create_temporary_tables
     end
+  end
+
+  def create_temporary_tables
+    execute "CREATE TEMPORARY TABLE new_files (
+      filename TEXT NOT NULL PRIMARY KEY,
+      digest TEXT NOT NULL)"
+    execute "CREATE INDEX new_files_digest ON new_files(digest)"
+
+    prepare_method :new_files_insert, "INSERT INTO new_files (filename, digest) VALUES (?, ?)"
+    prepare_method :new_files_count_query, "SELECT count(*) FROM new_files"
+
+    execute "CREATE TEMPORARY TABLE missing_files (
+      filename TEXT NOT NULL PRIMARY KEY,
+      digest TEXT NOT NULL)"
+    execute "CREATE INDEX missing_files_digest ON missing_files(digest)"
+
+    execute "INSERT INTO missing_files (filename, digest) SELECT filename, digest FROM digests"
+
+    prepare_method :missing_files_delete, "DELETE FROM missing_files WHERE filename = ?"
+    prepare_method :missing_files_delete_renamed_files, "DELETE FROM missing_files WHERE digest IN (SELECT digest FROM new_files)"
+    prepare_method :missing_files_select_all_filenames, "SELECT filename FROM missing_files ORDER BY filename"
+    prepare_method :missing_files_delete_all, "DELETE FROM missing_files"
+    prepare_method :missing_files_count_query, "SELECT count(*) FROM missing_files"
+
+    prepare_method :digests_delete_renamed_files, "DELETE FROM digests WHERE filename IN (SELECT filename FROM missing_files WHERE digest IN (SELECT digest FROM new_files))"
+    prepare_method :digests_delete_all_missing_files, "DELETE FROM digests WHERE filename IN (SELECT filename FROM missing_files)"
+
+    execute "CREATE TEMPORARY TABLE new_digests (
+      filename TEXT NOT NULL PRIMARY KEY,
+      digest TEXT NOT NULL)"
+
+    prepare_method :new_digests_insert, "INSERT INTO new_digests (filename, digest) VALUES (?, ?)"
+    prepare_method :digests_update_digests_to_new_digests, "INSERT INTO digests (filename, digest, digest_check_time) SELECT filename, digest, false FROM new_digests WHERE true ON CONFLICT (filename) DO UPDATE SET digest=excluded.digest"
   end
 
   def perform_check
     measure_time do
       perhaps_transaction(@new_digest_algorithm, :exclusive) do
-        @counters = {good: 0, updated: 0, new: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
-
-        @new_files = {}
-        @new_digests = {}
-        @missing_files = Hash[@db.prepare("SELECT filename, digest FROM digests").execute!]
+        @counters = {good: 0, updated: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
 
         walk_files do |filename|
           process_file filename
@@ -267,9 +301,7 @@ class FileDigests
             STDERR.puts "ERROR: New digest algorithm will not be in effect until there are files that are missing, likely damaged, or processed with an exception."
           else
             puts "Updating database to a new digest algorithm..." if @options[:verbose]
-            @new_digests.each do |old_digest, new_digest|
-              update_digest_to_new_digest new_digest, old_digest
-            end
+            digests_update_digests_to_new_digests
             set_metadata "digest_algorithm", @new_digest_algorithm
             puts "Transition to a new digest algorithm complete: #{@new_digest_algorithm}"
           end
@@ -295,7 +327,7 @@ class FileDigests
 
   def show_duplicates
     current_digest = nil
-    query_duplicates.each do |found|
+    digests_select_duplicates.each do |found|
       if current_digest != found["digest"]
         puts "" if current_digest
         current_digest = found["digest"]
@@ -327,9 +359,10 @@ class FileDigests
 
     normalized_filename = filename.delete_prefix("#{@files_path.to_s}/").encode("utf-8", universal_newline: true).unicode_normalize(:nfkc)
     mtime_string = time_to_database stat.mtime
-    digest = get_file_digest(filename)
+    digest, new_digest = get_file_digest(filename)
 
     nested_transaction do
+      new_digests_insert(normalized_filename, new_digest) if new_digest
       process_file_indeed normalized_filename, mtime_string, digest
     end
 
@@ -347,15 +380,15 @@ class FileDigests
   end
 
   def process_previously_seen_file found, filename, mtime, digest
-    @missing_files.delete(filename)
+    missing_files_delete filename
     if found["digest"] == digest
       @counters[:good] += 1
       puts "GOOD: #{filename}" if @options[:verbose]
       unless @options[:test_only]
         if found["mtime"] == mtime
-          touch_digest_check_time found["id"]
+          digests_touch_check_time found["id"]
         else
-          update_mtime mtime, found["id"]
+          digests_update_mtime mtime, found["id"]
         end
       end
     else
@@ -366,18 +399,17 @@ class FileDigests
         @counters[:updated] += 1
         puts "UPDATED#{" (FATE ACCEPTED)" if found["mtime"] == mtime && @options[:accept_fate]}: #{filename}" unless @options[:quiet]
         unless @options[:test_only]
-          update_mtime_and_digest mtime, digest, found["id"]
+          digests_update_mtime_and_digest mtime, digest, found["id"]
         end
       end
     end
   end
 
   def process_new_file filename, mtime, digest
-    @counters[:new] += 1
     puts "NEW: #{filename}" unless @options[:quiet]
+    new_files_insert filename, digest
     unless @options[:test_only]
-      @new_files[filename] = digest
-      insert filename, mtime, digest
+      digests_insert filename, mtime, digest
     end
   end
 
@@ -385,29 +417,31 @@ class FileDigests
   # Renames and missing files
 
   def track_renames
-    @missing_files.delete_if do |filename, digest|
-      if @new_files.value?(digest)
-        @counters[:renamed] += 1
-        unless @options[:test_only]
-          delete_by_filename filename
-        end
-        true
-      end
+    unless @options[:test_only]
+      digests_delete_renamed_files
     end
+    missing_files_delete_renamed_files
+    @counters[:renamed] = @db.changes
   end
 
   def print_missing_files
     puts "\nMISSING FILES:"
-    @missing_files.sort.to_h.each do |filename, digest|
-      puts filename
+    missing_files_select_all_filenames.each do |record|
+      puts record["filename"]
     end
   end
 
   def remove_missing_files
-    @missing_files.each do |filename, digest|
-      delete_by_filename filename
-    end
-    @missing_files = {}
+    digests_delete_all_missing_files
+    missing_files_delete_all
+  end
+
+  def missing_files_count
+    missing_files_count_query!&.first&.first
+  end
+
+  def any_missing_files?
+    missing_files_count > 0
   end
 
 
@@ -472,7 +506,7 @@ class FileDigests
   end
 
   def find_by_filename filename
-    result = find_by_filename_query filename
+    result = digests_find_by_filename_query filename
     found = result.next
     raise "Multiple records found" if result.next
     found
@@ -498,6 +532,10 @@ class FileDigests
       STDERR.puts "This version of file-digests (#{FileDigests::VERSION || "unknown"}) is only compartible with the database version #{target_version}. Current database version is #{current_version}. To use this database, please install appropriate version if file-digest."
       raise "Incompatible database version"
     end
+  end
+
+  def new_files_count
+    new_files_count_query!&.first&.first
   end
 
 
@@ -538,17 +576,12 @@ class FileDigests
         digest.update(buffer)
         new_digest.update(buffer) if @new_digest_algorithm
       end
-      @new_digests[digest.hexdigest] = new_digest.hexdigest if @new_digest_algorithm
-      return digest.hexdigest
+      return [digest.hexdigest, (new_digest.hexdigest if @new_digest_algorithm)]
     end
   end
 
 
   # Runtime state helpers
-
-  def any_missing_files?
-    @missing_files.length > 0
-  end
 
   def any_exceptions?
     @counters[:exceptions] > 0
@@ -564,8 +597,9 @@ class FileDigests
     if STDIN.tty? && STDOUT.tty?
       puts "#{text} (y/n)?"
       start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      STDIN.gets.strip.downcase == "y"
+      result = (STDIN.gets.strip.downcase == "y")
       @user_input_wait_time += (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start)
+      result
     end
   end
 
@@ -590,11 +624,14 @@ class FileDigests
   end
 
   def print_counters
+    missing_files_count_result = missing_files_count
+    new_files_count_result = new_files_count - @counters[:renamed]
+
     puts "#{@counters[:good]} file(s) passes digest check" if @counters[:good] > 0
     puts "#{@counters[:updated]} file(s) are updated" if @counters[:updated] > 0
-    puts "#{@counters[:new]} file(s) are new" if @counters[:new] > 0
+    puts "#{new_files_count_result} file(s) are new" if new_files_count_result > 0
     puts "#{@counters[:renamed]} file(s) are renamed" if @counters[:renamed] > 0
-    puts "#{@missing_files.length} file(s) are missing" if @missing_files.length > 0
+    puts "#{missing_files_count_result} file(s) are missing" if missing_files_count_result > 0
     puts "#{@counters[:likely_damaged]} file(s) are likely damaged (!)" if @counters[:likely_damaged] > 0
     puts "#{@counters[:exceptions]} file(s) had exceptions occured during processing (!)" if @counters[:exceptions] > 0
   end
