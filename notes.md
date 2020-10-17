@@ -82,3 +82,14 @@ Digest::KangarooTwelve.default.new - 34.506s
 # https://github.com/Yamaguchi/blake3rb
 Blake3::Hasher.new - 1m 16.898s
 ```
+
+
+### Process spawn is really slow on windows
+
+def get_file_digest filename
+  result = IO.popen(["b3sum_windows_x64_bin.exe", "--no-names", filename]) do |data|
+    data.read.strip
+  end
+  raise "Error calling b3sum_windows_x64_bin.exe, #{$?.inspect}" unless $?.success?
+  return [result, nil]
+end
