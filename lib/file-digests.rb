@@ -452,6 +452,7 @@ class FileDigests
   end
 
   def integrity_check
+    puts "Checking database integrity..." if @options[:verbose]
     if execute("PRAGMA integrity_check")&.first&.fetch("integrity_check") != "ok"
       raise "Database integrity check failed"
     end
