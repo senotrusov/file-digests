@@ -93,3 +93,6 @@ def get_file_digest filename
   raise "Error calling b3sum_windows_x64_bin.exe, #{$?.inspect}" unless $?.success?
   return [result, nil]
 end
+
+### Windows paths
+https://googleprojectzero.blogspot.com/2016/02/the-definitive-guide-on-win32-to-nt.html

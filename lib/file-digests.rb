@@ -140,13 +140,13 @@ class FileDigests
 
   def initialize_paths files_path, digest_database_path
     @files_path = cleanup_path(files_path || ".")
-
     raise "Files path must be a readable directory" unless (File.directory?(@files_path) && File.readable?(@files_path))
+    @files_path = realpath_with_disk @files_path
 
     @digest_database_path = digest_database_path ? cleanup_path(digest_database_path) : @files_path
     @digest_database_path += ".file-digests.sqlite" if File.directory?(@digest_database_path)
     ensure_dir_exist @digest_database_path.dirname
-
+    @digest_database_path = realdirpath_with_disk @digest_database_path
     @digest_database_files = ["#{@digest_database_path}", "#{@digest_database_path}-wal", "#{@digest_database_path}-shm"]
 
     if @options[:verbose]
@@ -273,7 +273,7 @@ class FileDigests
       perhaps_transaction(@new_digest_algorithm, :exclusive) do
         @counters = {good: 0, updated: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
 
-        walk_files do |filename|
+        walk_files(@files_path.to_s) do |filename|
           process_file filename
         end
 
@@ -340,9 +340,11 @@ class FileDigests
   private
 
   def process_file filename
-    return if File.symlink? filename
+    perhaps_nt_filename = perhaps_nt_path filename
 
-    stat = File.stat filename
+    return if File.symlink? perhaps_nt_filename
+
+    stat = File.stat perhaps_nt_filename
 
     return if stat.blockdev?
     return if stat.chardev?
@@ -359,7 +361,7 @@ class FileDigests
 
     normalized_filename = filename.delete_prefix("#{@files_path.to_s}/").encode("utf-8", universal_newline: true).unicode_normalize(:nfkc)
     mtime_string = time_to_database stat.mtime
-    digest, new_digest = get_file_digest(filename)
+    digest, new_digest = get_file_digest(perhaps_nt_filename)
 
     nested_transaction do
       new_digests_insert(normalized_filename, new_digest) if new_digest
@@ -542,6 +544,22 @@ class FileDigests
 
   # Filesystem-related helpers
 
+  def realpath_with_disk path
+    path = path.realpath
+    if Gem.win_platform? && path.to_s[0] == "/"
+      return Pathname(Dir.pwd[0, 2] + path.to_s)
+    end
+    path
+  end
+
+  def realdirpath_with_disk path
+    path = path.realdirpath
+    if Gem.win_platform? && path.to_s[0] == "/"
+      return Pathname(Dir.pwd[0, 2] + path.to_s)
+    end
+    path
+  end
+
   def patch_path_string path
     Gem.win_platform? ? path.gsub(/\\/, "/") : path
   end
@@ -560,10 +578,28 @@ class FileDigests
     end
   end
 
-  def walk_files
-    puts "Gathering the list of files..." if @options[:verbose]
-    Dir.glob(@files_path + "**" + "*", File::FNM_DOTMATCH) do |filename|
-      yield filename
+  def walk_files(path, &block)
+    Dir.each_child(path, encoding: "UTF-8") do |item|
+      item = "#{path}#{File::SEPARATOR}#{item}"
+      test_item = perhaps_nt_path item
+      if File.readable?(test_item)
+        if File.directory?(test_item)
+          walk_files(item, &block)
+        else
+          yield item
+        end
+      else
+        STDERR.puts "ERROR: Directory entry is not readable: #{item}"
+        @counters[:exceptions] += 1
+      end
+    end
+  end
+
+  def perhaps_nt_path path
+    if Gem.win_platform?
+      "\\??\\#{path.gsub(/\//,"\\")}"
+    else
+      path
     end
   end
 
