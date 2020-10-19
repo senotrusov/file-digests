@@ -86,6 +86,7 @@ Blake3::Hasher.new - 1m 16.898s
 
 ### Process spawn is really slow on windows
 
+```ruby
 def get_file_digest filename
   result = IO.popen(["b3sum_windows_x64_bin.exe", "--no-names", filename]) do |data|
     data.read.strip
@@ -93,6 +94,7 @@ def get_file_digest filename
   raise "Error calling b3sum_windows_x64_bin.exe, #{$?.inspect}" unless $?.success?
   return [result, nil]
 end
+```
 
 ### Windows paths
 https://googleprojectzero.blogspot.com/2016/02/the-definitive-guide-on-win32-to-nt.html
