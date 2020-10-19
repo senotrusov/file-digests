@@ -140,8 +140,10 @@ class FileDigests
 
   def initialize_paths files_path, digest_database_path
     @files_path = cleanup_path(files_path || ".")
-    raise "Files path must be a readable directory" unless (File.directory?(@files_path) && File.readable?(@files_path))
+    raise "ERROR: Files path must be a readable directory" unless (File.directory?(@files_path) && File.readable?(@files_path))
     @files_path = realpath_with_disk @files_path
+
+    @error_log_path = @files_path + "file-digests errors #{Time.now.strftime("%Y-%m-%d %H-%M-%S")}.txt"
 
     @digest_database_path = digest_database_path ? cleanup_path(digest_database_path) : @files_path
     @digest_database_path += ".file-digests.sqlite" if File.directory?(@digest_database_path)
@@ -370,7 +372,7 @@ class FileDigests
 
   rescue => exception
     @counters[:exceptions] += 1
-    print_file_exception exception, filename
+    report_file_exception exception, filename
   end
 
   def process_file_indeed filename, mtime, digest
@@ -396,7 +398,7 @@ class FileDigests
     else
       if found["mtime"] == mtime && !@options[:accept_fate] # Digest is different and mtime is the same
         @counters[:likely_damaged] += 1
-        STDERR.puts "LIKELY DAMAGED: #{filename}"
+        error_text "LIKELY DAMAGED: #{filename}"
       else
         @counters[:updated] += 1
         puts "UPDATED#{" (FATE ACCEPTED)" if found["mtime"] == mtime && @options[:accept_fate]}: #{filename}" unless @options[:quiet]
@@ -532,7 +534,7 @@ class FileDigests
   def check_if_database_is_at_certain_version target_version
     current_version = get_metadata("database_version")
     if current_version != target_version
-      STDERR.puts "This version of file-digests (#{FileDigests::VERSION || "unknown"}) is only compartible with the database version #{target_version}. Current database version is #{current_version}. To use this database, please install appropriate version if file-digest."
+      STDERR.puts "ERROR: This version of file-digests (#{FileDigests::VERSION || "unknown"}) is only compartible with the database version #{target_version}. Current database version is #{current_version}. To use this database, please install appropriate version if file-digest."
       raise "Incompatible database version"
     end
   end
@@ -581,17 +583,21 @@ class FileDigests
   def walk_files(path, &block)
     Dir.each_child(path, encoding: "UTF-8") do |item|
       item = "#{path}#{File::SEPARATOR}#{item}"
-      test_item = perhaps_nt_path item
-      if File.readable?(test_item)
-        if File.directory?(test_item)
-          walk_files(item, &block)
+      item_perhaps_nt_path = perhaps_nt_path item
+      
+      unless File.symlink? item_perhaps_nt_path
+        if File.directory?(item_perhaps_nt_path)
+          if File.readable?(item_perhaps_nt_path)
+            walk_files(item, &block)
+          else
+            error_text "ERROR: Directory is not readable: #{item}"
+            @counters[:exceptions] += 1
+          end
         else
           yield item
         end
-      else
-        STDERR.puts "ERROR: Directory entry is not readable: #{item}"
-        @counters[:exceptions] += 1
       end
+
     end
   end
 
@@ -647,17 +653,31 @@ class FileDigests
     puts "Elapsed time: #{elapsed.to_i / 3600}h #{(elapsed.to_i % 3600) / 60}m #{"%.3f" % (elapsed % 60)}s" unless @options[:quiet]
   end
 
-  def print_file_exception exception, filename
-    STDERR.print "EXCEPTION: #{exception.message}, processing file: "
-    begin
-      STDERR.print filename.encode("utf-8", universal_newline: true)
-    rescue
-      STDERR.print "(Unable to encode file name to utf-8) "
-      STDERR.print filename
+  def report_file_exception exception, filename
+    write_file_exception STDERR, exception, filename
+    File.open(@error_log_path, "a") do |f|
+      write_file_exception f, exception, filename
     end
-    STDERR.print "\n"
-    STDERR.flush
-    exception.backtrace.each { |line| STDERR.puts "  " + line }
+  end
+
+  def write_file_exception dest, exception, filename
+    dest.print "ERROR: #{exception.message}, processing file: "
+    begin
+      dest.print filename.encode("utf-8", universal_newline: true)
+    rescue
+      dest.print "(Unable to encode file name to utf-8) "
+      dest.print filename
+    end
+    dest.print "\n"
+    dest.flush
+    exception.backtrace.each { |line| dest.puts "  " + line }
+  end
+
+  def error_text text
+    STDERR.puts text
+    File.open(@error_log_path, "a") do |f|
+      f.puts text
+    end
   end
 
   def print_counters
