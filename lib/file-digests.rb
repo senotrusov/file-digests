@@ -1,3 +1,5 @@
+# encoding: UTF-8
+
 #  Copyright 2020 Stanislav Senotrusov <stan@senotrusov.com>
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,7 +19,6 @@ require "digest"
 require "fileutils"
 require "openssl"
 require "optparse"
-require "pathname"
 require "set"
 require "sqlite3"
 
@@ -138,29 +139,105 @@ class FileDigests
     puts "Using #{@digest_algorithm} digest algorithm" if @options[:verbose]
   end
 
+  def perform_check
+    measure_time do
+      perhaps_transaction(@new_digest_algorithm, :exclusive) do
+        @counters = {good: 0, updated: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
+
+        walk_files(@files_path) do |filename|
+          process_file filename
+        end
+
+        nested_transaction do
+          puts "Tracking renames..." if @options[:verbose]
+          track_renames
+        end
+
+        if any_missing_files?
+          if any_exceptions?
+            STDERR.puts "Due to previously occurred errors, missing files will not removed from the database."
+          else
+            report_missing_files
+            if !@options[:test_only] && (@options[:auto] || confirm("Remove missing files from the database"))
+              nested_transaction do
+                puts "Removing missing files..." if @options[:verbose]
+                remove_missing_files
+              end
+            end
+          end
+        end
+
+        if @new_digest_algorithm && !@options[:test_only]
+          if any_missing_files? || any_likely_damaged? || any_exceptions?
+            STDERR.puts "ERROR: New digest algorithm will not be in effect until there are files that are missing, likely damaged, or processed with an exception."
+          else
+            puts "Updating database to a new digest algorithm..." if @options[:verbose]
+            digests_update_digests_to_new_digests
+            set_metadata "digest_algorithm", @new_digest_algorithm
+            puts "Transition to a new digest algorithm complete: #{@new_digest_algorithm}"
+          end
+        end
+
+        if any_likely_damaged? || any_exceptions?
+          STDERR.puts "PLEASE REVIEW ERRORS THAT WERE OCCURRED!"
+          STDERR.puts "A list of errors is also saved in a file: #{@error_log_path}"
+        end
+
+        set_metadata(@options[:test_only] ? "latest_test_only_check_time" : "latest_complete_check_time", time_to_database(Time.now))
+
+        print_counters
+      end
+      
+      puts "Performing database maintenance..." if @options[:verbose]
+      execute "PRAGMA optimize"
+      execute "VACUUM"
+      execute "PRAGMA wal_checkpoint(TRUNCATE)"
+
+      hide_database_files
+    end
+  end
+
+  def show_duplicates
+    current_digest = nil
+    digests_select_duplicates.each do |found|
+      if current_digest != found["digest"]
+        puts "" if current_digest
+        current_digest = found["digest"]
+        puts "#{found["digest"]}:"
+      end
+      puts "  #{found["filename"]}"
+    end
+  end
+
+  private
+
   def initialize_paths files_path, digest_database_path
-    @start_time_filename_string = Time.now.strftime("%Y-%m-%d %H-%M-%S")
-    @files_path = cleanup_path(files_path || ".")
-    raise "ERROR: Files path must be a readable directory" unless (File.directory?(@files_path) && File.readable?(@files_path))
-    @files_path = realpath_with_disk @files_path
-
-    @error_log_path = @files_path + "file-digests errors #{@start_time_filename_string}.txt"
-    @missing_files_path = @files_path + "file-digests missing files #{@start_time_filename_string}.txt"
-
-    @digest_database_path = digest_database_path ? cleanup_path(digest_database_path) : @files_path
-    @digest_database_path += ".file-digests.sqlite" if File.directory?(@digest_database_path)
-    ensure_dir_exist @digest_database_path.dirname
-    @digest_database_path = realdirpath_with_disk @digest_database_path
+    @files_path = realpath(files_path || ".")
     
+    unless File.directory?(@files_path) && File.readable?(@files_path)
+      raise "ERROR: Files path must be a readable directory" 
+    end
+
+    @start_time_filename_string = Time.now.strftime("%Y-%m-%d %H-%M-%S")
+   
+    @error_log_path = "#{@files_path}#{File::SEPARATOR}file-digests errors #{@start_time_filename_string}.txt"
+    @missing_files_path = "#{@files_path}#{File::SEPARATOR}file-digests missing files #{@start_time_filename_string}.txt"
+
+    @digest_database_path = digest_database_path ? realdirpath(digest_database_path) : @files_path
+
+    if File.directory?(@digest_database_path)
+      @digest_database_path += "#{File::SEPARATOR}.file-digests.sqlite"
+    end
+
     @digest_database_files = [
-      "#{@digest_database_path}",
+      @digest_database_path,
       "#{@digest_database_path}-wal",
       "#{@digest_database_path}-shm"
     ]
 
     @skip_files = @digest_database_files + [
-      @error_log_path.to_s,
-      @missing_files_path.to_s
+      @error_log_path,
+      @missing_files_path
     ]
 
     if @options[:verbose]
@@ -170,7 +247,7 @@ class FileDigests
   end
 
   def initialize_database
-    @db = SQLite3::Database.new @digest_database_path.to_s
+    @db = SQLite3::Database.new @digest_database_path
     @db.results_as_hash = true
     @db.busy_timeout = 5000
 
@@ -229,7 +306,7 @@ class FileDigests
       # Convert database from 1st to 2nd version
       unless get_metadata("digest_algorithm")
         if get_metadata("database_version") == "1"
-          if File.exist?(@digest_database_path.dirname + ".file-digests.sha512")
+          if File.exist?("#{File.dirname(@digest_database_path)}#{File::SEPARATOR}.file-digests.sha512")
             set_metadata("digest_algorithm", "SHA512")
           else
             set_metadata("digest_algorithm", "SHA256")
@@ -282,81 +359,82 @@ class FileDigests
     prepare_method :digests_update_digests_to_new_digests, "INSERT INTO digests (filename, digest, digest_check_time) SELECT filename, digest, false FROM new_digests WHERE true ON CONFLICT (filename) DO UPDATE SET digest=excluded.digest"
   end
 
-  def perform_check
-    measure_time do
-      perhaps_transaction(@new_digest_algorithm, :exclusive) do
-        @counters = {good: 0, updated: 0, renamed: 0, likely_damaged: 0, exceptions: 0}
 
-        walk_files(@files_path.to_s) do |filename|
-          process_file filename
-        end
+  # Files
 
-        nested_transaction do
-          puts "Tracking renames..." if @options[:verbose]
-          track_renames
-        end
+  def realpath path
+    realxpath path, :realpath
+  end
 
-        if any_missing_files?
-          if any_exceptions?
-            STDERR.puts "Due to previously occurred errors, missing files will not removed from the database."
-          else
-            report_missing_files
-            if !@options[:test_only] && (@options[:auto] || confirm("Remove missing files from the database"))
-              nested_transaction do
-                puts "Removing missing files..." if @options[:verbose]
-                remove_missing_files
-              end
-            end
-          end
-        end
+  def realdirpath path
+    realxpath path, :realdirpath
+  end
 
-        if @new_digest_algorithm && !@options[:test_only]
-          if any_missing_files? || any_likely_damaged? || any_exceptions?
-            STDERR.puts "ERROR: New digest algorithm will not be in effect until there are files that are missing, likely damaged, or processed with an exception."
-          else
-            puts "Updating database to a new digest algorithm..." if @options[:verbose]
-            digests_update_digests_to_new_digests
-            set_metadata "digest_algorithm", @new_digest_algorithm
-            puts "Transition to a new digest algorithm complete: #{@new_digest_algorithm}"
-          end
-        end
+  def realxpath path, method_name
+    path = path.encode("utf-8")
 
-        if any_likely_damaged? || any_exceptions?
-          STDERR.puts "PLEASE REVIEW ERRORS THAT WERE OCCURRED!"
-        end
+    if Gem.win_platform?
+      path = path.gsub(/\\/, "/")
+    end
 
-        set_metadata(@options[:test_only] ? "latest_test_only_check_time" : "latest_complete_check_time", time_to_database(Time.now))
+    path = File.send(method_name, path).encode("utf-8")
 
-        print_counters
-      end
-      
-      puts "Performing database maintenance..." if @options[:verbose]
-      execute "PRAGMA optimize"
-      execute "VACUUM"
-      execute "PRAGMA wal_checkpoint(TRUNCATE)"
+    if Gem.win_platform? && path[0] == "/"
+      path = Dir.pwd[0, 2].encode("utf-8") + path
+    end
 
-      hide_database_files
+    path
+  end
+
+  def perhaps_nt_path path
+    if Gem.win_platform?
+      "\\??\\#{path.gsub(/\//,"\\")}"
+    else
+      path
     end
   end
 
-  def show_duplicates
-    current_digest = nil
-    digests_select_duplicates.each do |found|
-      if current_digest != found["digest"]
-        puts "" if current_digest
-        current_digest = found["digest"]
-        puts "#{found["digest"]}:"
+  def get_file_digest filename
+    File.open(filename, "rb") do |io|
+      digest = OpenSSL::Digest.new(@digest_algorithm)
+      new_digest = OpenSSL::Digest.new(@new_digest_algorithm) if @new_digest_algorithm
+
+      buffer = ""
+      while io.read(409600, buffer) # 409600 seems like a sweet spot
+        digest.update(buffer)
+        new_digest.update(buffer) if @new_digest_algorithm
       end
-      puts "  #{found["filename"]}"
+      return [digest.hexdigest, (new_digest.hexdigest if @new_digest_algorithm)]
     end
   end
 
-  private
+  def walk_files(path, &block)
+    Dir.each_child(path, encoding: "UTF-8") do |item|
+      item = "#{path}#{File::SEPARATOR}#{item.encode("utf-8")}"
+      begin
+        item_perhaps_nt_path = perhaps_nt_path item
+        
+        unless File.symlink? item_perhaps_nt_path
+          if File.directory?(item_perhaps_nt_path)
+            raise "Directory is not readable" unless File.readable?(item_perhaps_nt_path)
+            walk_files(item, &block)
+          else
+            yield item
+          end
+        end
+
+      rescue => exception
+        @counters[:exceptions] += 1
+        report_file_exception exception, item
+      end
+    end
+  end
 
   def process_file filename
     perhaps_nt_filename = perhaps_nt_path filename
 
-    return if File.symlink? perhaps_nt_filename
+    # this is checked in the walk_files
+    # return if File.symlink? perhaps_nt_filename
 
     stat = File.stat perhaps_nt_filename
 
@@ -373,7 +451,7 @@ class FileDigests
       return
     end
 
-    normalized_filename = filename.delete_prefix("#{@files_path.to_s}/").encode("utf-8", universal_newline: true).unicode_normalize(:nfkc)
+    normalized_filename = filename.delete_prefix("#{@files_path}#{File::SEPARATOR}").encode("utf-8", universal_newline: true).unicode_normalize(:nfkc)
     mtime_string = time_to_database stat.mtime
     digest, new_digest = get_file_digest(perhaps_nt_filename)
 
@@ -443,6 +521,7 @@ class FileDigests
       File.open(@missing_files_path, "a") do |f|
         write_missing_files f
       end
+      puts "\n(A list of missing files is also saved in a file: #{@missing_files_path})"
     end
   end
 
@@ -463,6 +542,17 @@ class FileDigests
 
   def any_missing_files?
     missing_files_count > 0
+  end
+
+
+  # Runtime state helpers
+
+  def any_exceptions?
+    @counters[:exceptions] > 0
+  end
+
+  def any_likely_damaged?
+    @counters[:likely_damaged] > 0
   end
 
 
@@ -560,96 +650,6 @@ class FileDigests
     new_files_count_query!&.first&.first
   end
 
-
-  # Filesystem-related helpers
-
-  def realpath_with_disk path
-    path = path.realpath
-    if Gem.win_platform? && path.to_s[0] == "/"
-      return Pathname(Dir.pwd[0, 2] + path.to_s)
-    end
-    path
-  end
-
-  def realdirpath_with_disk path
-    path = path.realdirpath
-    if Gem.win_platform? && path.to_s[0] == "/"
-      return Pathname(Dir.pwd[0, 2] + path.to_s)
-    end
-    path
-  end
-
-  def patch_path_string path
-    Gem.win_platform? ? path.gsub(/\\/, "/") : path
-  end
-
-  def cleanup_path path
-    Pathname.new(patch_path_string(path)).cleanpath
-  end
-
-  def ensure_dir_exist path
-    if File.exist?(path)
-      unless File.directory?(path)
-        raise "#{path} is not a directory"
-      end
-    else
-      FileUtils.mkdir_p path
-    end
-  end
-
-  def walk_files(path, &block)
-    Dir.each_child(path, encoding: "UTF-8") do |item|
-      item = "#{path}#{File::SEPARATOR}#{item}"
-      begin
-        item_perhaps_nt_path = perhaps_nt_path item
-        
-        unless File.symlink? item_perhaps_nt_path
-          if File.directory?(item_perhaps_nt_path)
-            raise "Directory is not readable" unless File.readable?(item_perhaps_nt_path)
-            walk_files(item, &block)
-          else
-            yield item
-          end
-        end
-      rescue => exception
-        @counters[:exceptions] += 1
-        report_file_exception exception, item
-      end
-    end
-  end
-
-  def perhaps_nt_path path
-    if Gem.win_platform?
-      "\\??\\#{path.gsub(/\//,"\\")}"
-    else
-      path
-    end
-  end
-
-  def get_file_digest filename
-    File.open(filename, "rb") do |io|
-      digest = OpenSSL::Digest.new(@digest_algorithm)
-      new_digest = OpenSSL::Digest.new(@new_digest_algorithm) if @new_digest_algorithm
-
-      buffer = ""
-      while io.read(409600, buffer) # 409600 seems like a sweet spot
-        digest.update(buffer)
-        new_digest.update(buffer) if @new_digest_algorithm
-      end
-      return [digest.hexdigest, (new_digest.hexdigest if @new_digest_algorithm)]
-    end
-  end
-
-
-  # Runtime state helpers
-
-  def any_exceptions?
-    @counters[:exceptions] > 0
-  end
-
-  def any_likely_damaged?
-    @counters[:likely_damaged] > 0
-  end
 
   # UI helpers
 

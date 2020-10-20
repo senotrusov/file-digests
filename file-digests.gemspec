@@ -14,7 +14,7 @@
 
 Gem::Specification.new do |s|
   s.name        = 'file-digests'
-  s.version     = '0.0.40'
+  s.version     = '0.0.41'
   s.date        = '2020-10-20'
 
   s.summary     = 'file-digests'

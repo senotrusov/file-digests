@@ -1,1 +1,1 @@
-ruby -Ilib bin\file-digests
+ruby -Ilib bin\file-digests %*
