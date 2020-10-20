@@ -139,17 +139,29 @@ class FileDigests
   end
 
   def initialize_paths files_path, digest_database_path
+    @start_time_filename_string = Time.now.strftime("%Y-%m-%d %H-%M-%S")
     @files_path = cleanup_path(files_path || ".")
     raise "ERROR: Files path must be a readable directory" unless (File.directory?(@files_path) && File.readable?(@files_path))
     @files_path = realpath_with_disk @files_path
 
-    @error_log_path = @files_path + "file-digests errors #{Time.now.strftime("%Y-%m-%d %H-%M-%S")}.txt"
+    @error_log_path = @files_path + "file-digests errors #{@start_time_filename_string}.txt"
+    @missing_files_path = @files_path + "file-digests missing files #{@start_time_filename_string}.txt"
 
     @digest_database_path = digest_database_path ? cleanup_path(digest_database_path) : @files_path
     @digest_database_path += ".file-digests.sqlite" if File.directory?(@digest_database_path)
     ensure_dir_exist @digest_database_path.dirname
     @digest_database_path = realdirpath_with_disk @digest_database_path
-    @digest_database_files = ["#{@digest_database_path}", "#{@digest_database_path}-wal", "#{@digest_database_path}-shm"]
+    
+    @digest_database_files = [
+      "#{@digest_database_path}",
+      "#{@digest_database_path}-wal",
+      "#{@digest_database_path}-shm"
+    ]
+
+    @skip_files = @digest_database_files + [
+      @error_log_path.to_s,
+      @missing_files_path.to_s
+    ]
 
     if @options[:verbose]
       puts "Target directory: #{@files_path}"
@@ -288,7 +300,7 @@ class FileDigests
           if any_exceptions?
             STDERR.puts "Due to previously occurred errors, missing files will not removed from the database."
           else
-            print_missing_files
+            report_missing_files
             if !@options[:test_only] && (@options[:auto] || confirm("Remove missing files from the database"))
               nested_transaction do
                 puts "Removing missing files..." if @options[:verbose]
@@ -356,8 +368,8 @@ class FileDigests
 
     raise "File is not readable" unless stat.readable?
 
-    if @digest_database_files.include?(filename)
-      puts "SKIPPING DATABASE FILE: #{filename}" if @options[:verbose]
+    if @skip_files.include?(filename)
+      puts "SKIPPING FILE: #{filename}" if @options[:verbose]
       return
     end
 
@@ -369,10 +381,6 @@ class FileDigests
       new_digests_insert(normalized_filename, new_digest) if new_digest
       process_file_indeed normalized_filename, mtime_string, digest
     end
-
-  rescue => exception
-    @counters[:exceptions] += 1
-    report_file_exception exception, filename
   end
 
   def process_file_indeed filename, mtime, digest
@@ -428,10 +436,19 @@ class FileDigests
     @counters[:renamed] = @db.changes
   end
 
-  def print_missing_files
+  def report_missing_files
     puts "\nMISSING FILES:"
+    write_missing_files STDOUT
+    if missing_files_count > 256
+      File.open(@missing_files_path, "a") do |f|
+        write_missing_files f
+      end
+    end
+  end
+
+  def write_missing_files dest
     missing_files_select_all_filenames.each do |record|
-      puts record["filename"]
+      dest.puts record["filename"]
     end
   end
 
@@ -583,21 +600,21 @@ class FileDigests
   def walk_files(path, &block)
     Dir.each_child(path, encoding: "UTF-8") do |item|
       item = "#{path}#{File::SEPARATOR}#{item}"
-      item_perhaps_nt_path = perhaps_nt_path item
-      
-      unless File.symlink? item_perhaps_nt_path
-        if File.directory?(item_perhaps_nt_path)
-          if File.readable?(item_perhaps_nt_path)
+      begin
+        item_perhaps_nt_path = perhaps_nt_path item
+        
+        unless File.symlink? item_perhaps_nt_path
+          if File.directory?(item_perhaps_nt_path)
+            raise "Directory is not readable" unless File.readable?(item_perhaps_nt_path)
             walk_files(item, &block)
           else
-            error_text "ERROR: Directory is not readable: #{item}"
-            @counters[:exceptions] += 1
+            yield item
           end
-        else
-          yield item
         end
+      rescue => exception
+        @counters[:exceptions] += 1
+        report_file_exception exception, item
       end
-
     end
   end
 
