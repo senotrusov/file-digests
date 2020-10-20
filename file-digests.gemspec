@@ -14,8 +14,8 @@
 
 Gem::Specification.new do |s|
   s.name        = 'file-digests'
-  s.version     = '0.0.39'
-  s.date        = '2020-10-19'
+  s.version     = '0.0.40'
+  s.date        = '2020-10-20'
 
   s.summary     = 'file-digests'
   s.description = 'Calculate file digests and check for the possible file corruption'
