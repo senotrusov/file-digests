@@ -6,7 +6,7 @@ If you move your files around, perhaps across platforms, maybe through unreliabl
 
 It will also help you to find issues with your storage: silent data corruption, bitflips/bitrot, bad blocks, other hardware or software faults.
 
-You could use this utility to veryfy that restore from your backup was sucsessful.
+You could use this utility to veryfy the restore process for your backups.
 
 It can show a list of duplicate files as well.
 
@@ -26,15 +26,21 @@ It is a CLI utility, written on Ruby. It's cross-platform (Linux/UNIX/Windows/ma
 ### Digest algorithms
 
 * You could change the digest algorithm at any time. Transition to a new algorithm will only occur if all files pass the check by digests which were stored using the old one.
-* Faster algorithms like KangarooTwelve and BLAKE3 may be added as soon as fast and stable implementation will be available in Ruby.
+* Faster algorithms like KangarooTwelve and BLAKE3 may be added as soon as fast implementations will be available in Ruby.
 
 ## Install
 
-```sh
-# Windows (please install Ruby for Windows first).
-gem install file-digests
+### Windows
 
-# Linux/macOS
+Please install [Ruby](https://rubyinstaller.org/) first.
+
+```sh
+gem install file-digests
+```
+
+### Linux/macOS
+
+```sh
 sudo gem install file-digests
 ```
 
