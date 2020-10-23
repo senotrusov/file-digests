@@ -14,7 +14,7 @@ It is a CLI utility, written on Ruby. It's cross-platform (Linux/UNIX/Windows/ma
 
 ### How it works
 
-* Given the directory, it calculates digests (BLAKE2b512, SHA3-256, or SHA512-256) for the files it contains.
+* Given the directory, it calculates digests/hashes (BLAKE2b512, SHA3-256, or SHA512-256) for the files it contains.
 * Those digests are then kept in a SQLite database. By default, the database is stored in the same directory with the rest of the files. You could specify any other location.
 * Any time later you run the tool again.
   * It will check if any file becomes corrupted or missed due to hardware/software issues.
