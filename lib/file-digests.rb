@@ -113,6 +113,7 @@ class FileDigests
 
     file_digests = self.new ARGV[0], ARGV[1], options
     file_digests.send(options[:action] || :perform_check)
+    file_digests.close_database
   end
 
   def initialize files_path, digest_database_path, options = {}
@@ -187,13 +188,11 @@ class FileDigests
 
         print_counters
       end
-      
+
       puts "Performing database maintenance..." if @options[:verbose]
       execute "PRAGMA optimize"
       execute "VACUUM"
       execute "PRAGMA wal_checkpoint(TRUNCATE)"
-
-      hide_database_files
     end
   end
 
@@ -209,17 +208,23 @@ class FileDigests
     end
   end
 
+  def close_database
+    @statements.each(&:close)
+    @db.close
+    hide_database_files
+  end
+
   private
 
   def initialize_paths files_path, digest_database_path
     @files_path = realpath(files_path || ".")
-    
+
     unless File.directory?(@files_path) && File.readable?(@files_path)
-      raise "ERROR: Files path must be a readable directory" 
+      raise "ERROR: Files path must be a readable directory"
     end
 
     @start_time_filename_string = Time.now.strftime("%Y-%m-%d %H-%M-%S")
-   
+
     @error_log_path = "#{@files_path}#{File::SEPARATOR}file-digests errors #{@start_time_filename_string}.txt"
     @missing_files_path = "#{@files_path}#{File::SEPARATOR}file-digests missing files #{@start_time_filename_string}.txt"
 
@@ -250,6 +255,7 @@ class FileDigests
     @db = SQLite3::Database.new @digest_database_path
     @db.results_as_hash = true
     @db.busy_timeout = 5000
+    @statements = []
 
     execute "PRAGMA encoding = 'UTF-8'"
     execute "PRAGMA locking_mode = 'EXCLUSIVE'"
@@ -319,7 +325,7 @@ class FileDigests
         execute "CREATE INDEX digests_digest ON digests(digest)"
         set_metadata "database_version", "3"
       end
-  
+
       check_if_database_is_at_certain_version "3"
 
       create_temporary_tables
@@ -358,7 +364,6 @@ class FileDigests
     prepare_method :new_digests_insert, "INSERT INTO new_digests (filename, digest) VALUES (?, ?)"
     prepare_method :digests_update_digests_to_new_digests, "INSERT INTO digests (filename, digest, digest_check_time) SELECT filename, digest, false FROM new_digests WHERE true ON CONFLICT (filename) DO UPDATE SET digest=excluded.digest"
   end
-
 
   # Files
 
@@ -413,7 +418,7 @@ class FileDigests
       item = "#{path}#{File::SEPARATOR}#{item.encode("utf-8")}"
       begin
         item_perhaps_nt_path = perhaps_nt_path item
-        
+
         unless File.symlink? item_perhaps_nt_path
           if File.directory?(item_perhaps_nt_path)
             raise "Directory is not readable" unless File.readable?(item_perhaps_nt_path)
@@ -596,7 +601,10 @@ class FileDigests
   def prepare_method name, query
     variable = "@#{name}"
 
-    instance_variable_set(variable, @db.prepare(query))
+    statement = @db.prepare(query)
+    @statements.push(statement)
+
+    instance_variable_set(variable, statement)
 
     define_singleton_method name do |*args, &block|
       instance_variable_get(variable).execute(*args, &block)
