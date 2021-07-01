@@ -6,7 +6,7 @@ If you move your files around, perhaps across platforms, maybe through unreliabl
 
 It will also help you to find issues with your storage: silent data corruption, bitflips/bitrot, bad blocks, other hardware or software faults.
 
-You could use this utility to veryfy the restore process for your backups.
+You could use this utility to verify the restore process for your backups.
 
 It can show a list of duplicate files as well.
 
