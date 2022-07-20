@@ -1,0 +1,15 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    openssl (3.0.0)
+    sqlite3 (1.4.4)
+
+PLATFORMS
+  x86_64-linux
+
+DEPENDENCIES
+  openssl
+  sqlite3
+
+BUNDLED WITH
+   2.3.7

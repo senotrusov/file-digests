@@ -24,8 +24,8 @@ fi
 file="$(gem build file-digests.gemspec | grep "File:" | sed "s/^[[:space:]]*File:[[:space:]]//"; test "${PIPESTATUS[*]}" = "0 0 0")" || fail
 
 if [ -n "${file}" ] && [ -f "${file}" ]; then
-  sudo gem install "${file}" || fail
-  sudo gem cleanup "${file}" || fail
+  gem install "${file}" || fail
+  gem cleanup "${file}" || fail
   gem push "${file}" || fail
   rm -f file-digests-*.gem || fail
 else

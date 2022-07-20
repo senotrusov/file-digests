@@ -14,8 +14,8 @@
 
 Gem::Specification.new do |s|
   s.name        = 'file-digests'
-  s.version     = '0.0.42'
-  s.date        = '2021-04-26'
+  s.version     = '0.0.43'
+  s.date        = '2022-07-20'
 
   s.summary     = 'file-digests'
   s.description = 'Calculate file digests and check for the possible file corruption'
@@ -27,6 +27,6 @@ Gem::Specification.new do |s|
   s.files       = ['lib/file-digests.rb']
   s.executables = ['file-digests']
 
-  s.add_runtime_dependency 'openssl', '~> 2.1'
-  s.add_runtime_dependency 'sqlite3', '~> 1.3'
+  s.add_runtime_dependency 'openssl', '~> 3.0'
+  s.add_runtime_dependency 'sqlite3', '~> 1.4'
 end
