@@ -291,22 +291,20 @@ class FileDigests
           id INTEGER NOT NULL PRIMARY KEY,
           filename TEXT NOT NULL,
           mtime TEXT,
-          digest TEXT NOT NULL,
-          digest_check_time TEXT NOT NULL)"
+          digest TEXT NOT NULL)"
         execute "CREATE UNIQUE INDEX digests_filename ON digests(filename)"
         execute "CREATE INDEX digests_digest ON digests(digest)"
         set_metadata("digests_table_created_by_gem_version", FileDigests::VERSION) if FileDigests::VERSION
       end
 
-      prepare_method :digests_insert, "INSERT INTO digests (filename, mtime, digest, digest_check_time) VALUES (?, ?, ?, datetime('now'))"
+      prepare_method :digests_insert, "INSERT INTO digests (filename, mtime, digest) VALUES (?, ?, ?)"
       prepare_method :digests_find_by_filename_query, "SELECT id, mtime, digest FROM digests WHERE filename = ?"
-      prepare_method :digests_touch_check_time, "UPDATE digests SET digest_check_time = datetime('now') WHERE id = ?"
-      prepare_method :digests_update_mtime_and_digest, "UPDATE digests SET mtime = ?, digest = ?, digest_check_time = datetime('now') WHERE id = ?"
-      prepare_method :digests_update_mtime, "UPDATE digests SET mtime = ?, digest_check_time = datetime('now') WHERE id = ?"
+      prepare_method :digests_update_mtime_and_digest, "UPDATE digests SET mtime = ?, digest = ? WHERE id = ?"
+      prepare_method :digests_update_mtime, "UPDATE digests SET mtime = ? WHERE id = ?"
       prepare_method :digests_select_duplicates, "SELECT digest, filename FROM digests WHERE digest IN (SELECT digest FROM digests GROUP BY digest HAVING count(*) > 1) ORDER BY digest, filename;"
 
       unless get_metadata("database_version")
-        set_metadata "database_version", "3"
+        set_metadata "database_version", "4"
       end
 
       # Convert database from 1st to 2nd version
@@ -324,6 +322,11 @@ class FileDigests
       if get_metadata("database_version") == "2"
         execute "CREATE INDEX digests_digest ON digests(digest)"
         set_metadata "database_version", "3"
+      end
+
+      if get_metadata("database_version") == "3"
+        execute "ALTER TABLE digests DROP COLUMN digest_check_time"
+        set_metadata "database_version", "4"
       end
 
       check_if_database_is_at_certain_version "3"
@@ -362,7 +365,7 @@ class FileDigests
       digest TEXT NOT NULL)"
 
     prepare_method :new_digests_insert, "INSERT INTO new_digests (filename, digest) VALUES (?, ?)"
-    prepare_method :digests_update_digests_to_new_digests, "INSERT INTO digests (filename, digest, digest_check_time) SELECT filename, digest, false FROM new_digests WHERE true ON CONFLICT (filename) DO UPDATE SET digest=excluded.digest"
+    prepare_method :digests_update_digests_to_new_digests, "INSERT INTO digests (filename, digest) SELECT filename, digest FROM new_digests WHERE true ON CONFLICT (filename) DO UPDATE SET digest=excluded.digest"
   end
 
   # Files
@@ -480,9 +483,7 @@ class FileDigests
       @counters[:good] += 1
       puts "GOOD: #{filename}" if @options[:verbose]
       unless @options[:test_only]
-        if found["mtime"] == mtime
-          digests_touch_check_time found["id"]
-        else
+        if found["mtime"] != mtime
           digests_update_mtime mtime, found["id"]
         end
       end
