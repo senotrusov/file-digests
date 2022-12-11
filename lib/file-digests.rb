@@ -184,8 +184,6 @@ class FileDigests
           STDERR.puts "A list of errors is also saved in a file: #{@error_log_path}"
         end
 
-        set_metadata(@options[:test_only] ? "latest_test_only_check_time" : "latest_complete_check_time", time_to_database(Time.now))
-
         print_counters
       end
 
