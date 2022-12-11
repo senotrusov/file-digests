@@ -247,10 +247,8 @@ class FileDigests
       @missing_files_path
     ]
 
-    if @options[:verbose]
-      puts "Target directory: #{@files_path}"
-      puts "Database location: #{@digest_database_path}"
-    end
+    puts "Checking file digests in: #{@files_path}" unless @options[:quiet]
+    puts "Database location: #{@digest_database_path}" if @options[:verbose]
   end
 
   def initialize_database
