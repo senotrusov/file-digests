@@ -331,7 +331,7 @@ class FileDigests
         set_metadata "database_version", "4"
       end
 
-      check_if_database_is_at_certain_version "3"
+      check_if_database_is_at_certain_version "4"
 
       create_temporary_tables
     end
