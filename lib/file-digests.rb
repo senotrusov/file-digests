@@ -185,6 +185,10 @@ class FileDigests
         end
 
         print_counters
+
+        if any_missing_files? || any_likely_damaged? || any_exceptions?
+          $FILE_DIGESTS_EXIT_STATUS=1
+        end
       end
 
       puts "Performing database maintenance..." if @options[:verbose]

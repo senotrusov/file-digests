@@ -16,4 +16,8 @@
 
 require 'file-digests'
 
+$FILE_DIGESTS_EXIT_STATUS=0
+
 FileDigests.run_cli_utility
+
+exit $FILE_DIGESTS_EXIT_STATUS
